@@ -1,0 +1,29 @@
+# 憑證與環境變數（絕對不能上傳）
+.env
+*.env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Log 與截圖（含敏感操作記錄）
+*.log
+screenshot_*.png
+debug_*.png
+
+# macOS
+.DS_Store
