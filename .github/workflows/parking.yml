@@ -2,13 +2,15 @@ name: Parking Availability Check
 
 on:
   schedule:
-    - cron: '*/5 * * * *'   # 每 5 分鐘執行一次（UTC 時間）
-  workflow_dispatch:          # 允許手動觸發（測試用）
+    # GitHub Actions cron 最短間隔為 5 分鐘
+    # 解法：每次 workflow 內部執行 5 輪，每輪間隔 ~60 秒 → 實質每分鐘偵測一次
+    - cron: '*/5 * * * *'
+  workflow_dispatch:   # 允許手動觸發
 
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 5        # 超過 5 分鐘自動終止，避免卡住浪費額度
+    timeout-minutes: 8   # 5 輪 × ~60s + 啟動時間，設 8 分鐘保險
 
     steps:
       - name: Checkout code
@@ -19,16 +21,23 @@ jobs:
         with:
           python-version: '3.11'
 
+      - name: Cache pip
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip
+          key: ${{ runner.os }}-pip-playwright
+
       - name: Install dependencies
         run: |
-          pip install playwright apscheduler requests
+          pip install playwright requests
           playwright install chromium --with-deps
 
-      - name: Run parking agent
+      - name: Run parking agent (5 rounds × ~1 min)
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
           LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
           GMAIL_RECIPIENT: ${{ secrets.GMAIL_RECIPIENT }}
+          CHECK_ROUNDS: "5"
         run: python parking_book/parking_agent_v2.py

@@ -14,22 +14,24 @@
 import asyncio
 import json
 import logging
+import os
+import random
 import smtplib
 from datetime import datetime
 from email.mime.text import MIMEText
 
-import os
-
 import requests
-from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from playwright.async_api import async_playwright, TimeoutError as AsyncPlaywrightTimeoutError
 
 # ─────────────────────────────────────────────
-# 設定區（憑證從環境變數讀取，本機測試請建立 .env 並搭配 python-dotenv）
+# 設定區
 # ─────────────────────────────────────────────
 
-TARGET_DATE = "05-23"           # 頁面日期格式為 "2026-05-23 (六)"，模糊比對
-CHECK_INTERVAL_MINUTES = 5
+TARGET_DATE = "05-23"
+
+# GitHub Actions 模式：一次執行幾輪（每輪間隔 ~60 秒）
+# 本機單次執行時設為 1
+ROUNDS = int(os.environ.get("CHECK_ROUNDS", "1"))
 
 LINE_CHANNEL_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
 LINE_USER_ID              = os.environ["LINE_USER_ID"]
@@ -39,16 +41,42 @@ GMAIL_PASSWORD  = os.environ["GMAIL_PASSWORD"]
 GMAIL_RECIPIENT = os.environ.get("GMAIL_RECIPIENT", os.environ["GMAIL_SENDER"])
 
 # ─────────────────────────────────────────────
+# 反封鎖：隨機 User-Agent 池
+# ─────────────────────────────────────────────
+
+_USER_AGENTS = [
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+]
+
+def _random_viewport():
+    """回傳接近真實使用者的隨機解析度"""
+    presets = [
+        {"width": 1920, "height": 1080},
+        {"width": 1440, "height": 900},
+        {"width": 1366, "height": 768},
+        {"width": 1280, "height": 800},
+        {"width": 1536, "height": 864},
+    ]
+    return random.choice(presets)
+
+def _jitter(base_ms: int, pct: float = 0.3) -> int:
+    """在 base_ms ± pct 範圍內加入隨機抖動，模擬真人操作速度"""
+    delta = int(base_ms * pct)
+    return base_ms + random.randint(-delta, delta)
+
+# ─────────────────────────────────────────────
 # Logger
 # ─────────────────────────────────────────────
 
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
-    handlers=[
-        logging.FileHandler("parking_agent.log", encoding="utf-8"),
-        logging.StreamHandler(),
-    ],
+    handlers=[logging.StreamHandler()],
 )
 log = logging.getLogger(__name__)
 
@@ -104,20 +132,24 @@ def send_notifications(message: str):
     )
 
 # ─────────────────────────────────────────────
-# 核心檢查（已驗證 selector）
+# 核心檢查
 # ─────────────────────────────────────────────
 
 async def check_and_book() -> bool:
-    log.info(f"開始檢查 {TARGET_DATE} 是否可預約...")
+    ua       = random.choice(_USER_AGENTS)
+    viewport = _random_viewport()
+    log.info(f"開始檢查 {TARGET_DATE} | UA: ...{ua[-40:]} | viewport: {viewport['width']}x{viewport['height']}")
+
     async with async_playwright() as p:
-        browser = await p.chromium.launch(headless=True, slow_mo=300)
+        browser = await p.chromium.launch(
+            headless=True,
+            slow_mo=_jitter(400),   # 操作間隔隨機化
+        )
         context = await browser.new_context(
-            user_agent=(
-                "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
-                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                "Chrome/124.0.0.0 Safari/537.36"
-            ),
-            viewport={"width": 1280, "height": 800},
+            user_agent=ua,
+            viewport=viewport,
+            locale="zh-TW",
+            timezone_id="Asia/Taipei",
         )
         page = await context.new_page()
         try:
@@ -126,16 +158,16 @@ async def check_and_book() -> bool:
                 wait_until="networkidle",
                 timeout=30_000,
             )
-            await page.wait_for_timeout(1500)
+            await page.wait_for_timeout(_jitter(1500))
 
             await page.get_by_role("link", name="前往").first.click()
-            await page.wait_for_timeout(1000)
+            await page.wait_for_timeout(_jitter(1000))
 
             await page.locator(".v-input--selection-controls__ripple").click()
-            await page.wait_for_timeout(500)
+            await page.wait_for_timeout(_jitter(600))
 
             await page.get_by_role("button", name="前往預約").click()
-            await page.wait_for_timeout(2000)
+            await page.wait_for_timeout(_jitter(2000))
             try:
                 await page.wait_for_load_state("networkidle", timeout=10_000)
             except AsyncPlaywrightTimeoutError:
@@ -150,7 +182,7 @@ async def check_and_book() -> bool:
             is_bookable = await target_row.locator("button, a").filter(has_text="預約").count() > 0
 
             if is_full:
-                log.info(f"❌ {TARGET_DATE} 已滿，下次再試")
+                log.info(f"❌ {TARGET_DATE} 已滿")
                 return False
             elif is_bookable:
                 log.info(f"✅ {TARGET_DATE} 可以預約！")
@@ -172,50 +204,31 @@ async def check_and_book() -> bool:
             log.error(f"執行時發生例外：{e}", exc_info=True)
             return False
         finally:
-            try:
-                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
-                await page.screenshot(path=f"screenshot_{ts}.png")
-            except Exception:
-                pass
             await browser.close()
 
+
 # ─────────────────────────────────────────────
-# 排程器
+# 主程式：支援多輪模式（GitHub Actions 用）
 # ─────────────────────────────────────────────
-
-_notified = False
-
-
-async def scheduled_job():
-    global _notified
-    if _notified:
-        log.info("已發送過通知，跳過（重啟可重置）")
-        return
-    success = await check_and_book()
-    if success:
-        _notified = True
-
 
 async def main():
-    log.info("=" * 50)
-    log.info(f"停車場預約 Agent 啟動 | 目標：{TARGET_DATE} | 間隔：{CHECK_INTERVAL_MINUTES} 分鐘")
-    log.info("=" * 50)
+    log.info(f"停車場預約 Agent | 目標：{TARGET_DATE} | 執行輪數：{ROUNDS}")
 
-    await scheduled_job()
-    if _notified:
-        return
+    for round_num in range(1, ROUNDS + 1):
+        if ROUNDS > 1:
+            log.info(f"── 第 {round_num}/{ROUNDS} 輪 ──")
 
-    scheduler = AsyncIOScheduler(timezone="Asia/Taipei")
-    scheduler.add_job(scheduled_job, "interval", minutes=CHECK_INTERVAL_MINUTES)
-    scheduler.start()
-    log.info("排程器已啟動，按 Ctrl+C 結束")
+        found = await check_and_book()
+        if found:
+            log.info("已通知，結束所有輪次")
+            return
 
-    try:
-        await asyncio.Event().wait()
-    except (KeyboardInterrupt, SystemExit):
-        log.info("使用者中止，程式結束")
-    finally:
-        scheduler.shutdown()
+        if round_num < ROUNDS:
+            wait_sec = _jitter(60_000, pct=0.15) // 1000   # ~60 秒 ± 15%
+            log.info(f"等待 {wait_sec} 秒後進行下一輪...")
+            await asyncio.sleep(wait_sec)
+
+    log.info("所有輪次完成")
 
 
 if __name__ == "__main__":
