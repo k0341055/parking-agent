@@ -261,6 +261,16 @@ async def check_and_book() -> bool:
             except AsyncPlaywrightTimeoutError:
                 pass
 
+            # ── 關閉送出後跳出的確認/結果視窗 ──
+            try:
+                close_btn = page.get_by_role("button").nth(2)
+                if await close_btn.count() > 0 and await close_btn.is_visible(timeout=3000):
+                    await close_btn.click()
+                    await page.wait_for_timeout(_jitter(1000))
+                    log.info("已關閉跳出視窗")
+            except Exception:
+                pass  # 視窗不存在或已自動關閉，略過
+
             # ── 判斷是否成功（找成功提示文字）──
             success_indicators = ["預約成功", "完成", "成功", "已預約"]
             page_text = await page.inner_text("body")
