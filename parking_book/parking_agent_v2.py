@@ -1,10 +1,13 @@
 """
 停車場預約 Agent v2
 偵測 https://pcc.youparking.com.tw/parkingreserve/#/
-當 TARGET_DATE 出現可預約按鈕時，透過 LINE / Gmail 通知
+當 TARGET_DATE 出現可預約按鈕時：
+  1. 發送「可以預約」通知
+  2. 自動填入資料並送出
+  3. 發送「預約成功/失敗」通知
 
 安裝：
-    pip install playwright apscheduler requests
+    pip install playwright requests
     playwright install chromium
 
 執行：
@@ -27,23 +30,27 @@ from playwright.async_api import async_playwright, TimeoutError as AsyncPlaywrig
 # 設定區
 # ─────────────────────────────────────────────
 
-TARGET_DATE = "05-23"
+TARGET_DATE   = "05-23"   # 頁面日期格式 "2026-05-23 (六)"，模糊比對
+PARKING_DAYS  = int(os.environ.get("PARKING_DAYS", "5"))   # 停放天數
 
-# GitHub Actions 模式：一次執行幾輪（每輪間隔 ~60 秒）
-# 本機單次執行時設為 1
+# GitHub Actions 模式：每次 workflow 執行幾輪（每輪間隔 ~60 秒）
 ROUNDS = int(os.environ.get("CHECK_ROUNDS", "1"))
 
+# 通知憑證（從環境變數讀取，不寫在程式碼裡）
 LINE_CHANNEL_ACCESS_TOKEN = os.environ["LINE_CHANNEL_ACCESS_TOKEN"]
 LINE_USER_ID              = os.environ["LINE_USER_ID"]
 
 GMAIL_SENDER     = os.environ["GMAIL_SENDER"]
 GMAIL_PASSWORD   = os.environ["GMAIL_PASSWORD"]
-# 支援多個收件人，以逗號分隔，例如 "a@gmail.com,b@gmail.com"
 GMAIL_RECIPIENTS = [
     addr.strip()
     for addr in os.environ.get("GMAIL_RECIPIENTS", os.environ["GMAIL_SENDER"]).split(",")
     if addr.strip()
 ]
+
+# 個人資料（從環境變數讀取，不寫在程式碼裡）
+BOOKER_NAME  = os.environ["BOOKER_NAME"]    # 姓名
+BOOKER_PLATE = os.environ["BOOKER_PLATE"]   # 車牌號碼
 
 # ─────────────────────────────────────────────
 # 反封鎖：隨機 User-Agent 池
@@ -59,7 +66,6 @@ _USER_AGENTS = [
 ]
 
 def _random_viewport():
-    """回傳接近真實使用者的隨機解析度"""
     presets = [
         {"width": 1920, "height": 1080},
         {"width": 1440, "height": 900},
@@ -70,7 +76,6 @@ def _random_viewport():
     return random.choice(presets)
 
 def _jitter(base_ms: int, pct: float = 0.3) -> int:
-    """在 base_ms ± pct 範圍內加入隨機抖動，模擬真人操作速度"""
     delta = int(base_ms * pct)
     return base_ms + random.randint(-delta, delta)
 
@@ -129,26 +134,55 @@ def notify_gmail(subject: str, body: str) -> bool:
         return False
 
 
-def send_notifications(message: str):
-    notify_line(f"🚗 停車預約通知\n\n{message}")
-    notify_gmail(
-        subject="🚗 停車場可以預約了！",
-        body=f"{message}\n\n請前往：https://pcc.youparking.com.tw/parkingreserve/#/",
+def notify_available():
+    """通知 1：偵測到可預約，自動預約進行中"""
+    msg = (
+        f"【{TARGET_DATE} 停車位可以預約！】\n"
+        f"偵測時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n"
+        f"正在自動填單送出，請稍候..."
     )
+    notify_line(f"🚗 停車預約通知\n\n{msg}")
+    notify_gmail(subject="🚗 停車場可以預約了！正在自動預約...", body=msg)
+
+
+def notify_booked_success():
+    """通知 2：預約成功"""
+    msg = (
+        f"【{TARGET_DATE} 預約成功！】\n"
+        f"停放天數：{PARKING_DAYS} 天\n"
+        f"完成時間：{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+    notify_line(f"✅ 停車預約成功！\n\n{msg}")
+    notify_gmail(subject="✅ 停車預約成功！", body=msg)
+
+
+def notify_booked_failed(reason: str):
+    """通知 2（失敗）：自動預約失敗，請手動操作"""
+    msg = (
+        f"【{TARGET_DATE} 自動預約失敗】\n"
+        f"原因：{reason}\n"
+        f"請立即手動前往：https://pcc.youparking.com.tw/parkingreserve/#/"
+    )
+    notify_line(f"⚠️ 自動預約失敗，請手動操作！\n\n{msg}")
+    notify_gmail(subject="⚠️ 停車自動預約失敗，請手動操作！", body=msg)
 
 # ─────────────────────────────────────────────
-# 核心檢查
+# 核心檢查與自動預約
 # ─────────────────────────────────────────────
 
 async def check_and_book() -> bool:
+    """
+    回傳 True 表示已處理完畢（不論成功或失敗），停止後續輪次。
+    回傳 False 表示尚未開放，繼續下一輪。
+    """
     ua       = random.choice(_USER_AGENTS)
     viewport = _random_viewport()
-    log.info(f"開始檢查 {TARGET_DATE} | UA: ...{ua[-40:]} | viewport: {viewport['width']}x{viewport['height']}")
+    log.info(f"開始檢查 {TARGET_DATE} | UA: ...{ua[-40:]} | {viewport['width']}x{viewport['height']}")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            slow_mo=_jitter(400),   # 操作間隔隨機化
+            slow_mo=_jitter(400),
         )
         context = await browser.new_context(
             user_agent=ua,
@@ -158,19 +192,17 @@ async def check_and_book() -> bool:
         )
         page = await context.new_page()
         try:
+            # ── 進入預約列表 ──
             await page.goto(
                 "https://pcc.youparking.com.tw/parkingreserve/#/",
                 wait_until="networkidle",
                 timeout=30_000,
             )
             await page.wait_for_timeout(_jitter(1500))
-
             await page.get_by_role("link", name="前往").first.click()
             await page.wait_for_timeout(_jitter(1000))
-
             await page.locator(".v-input--selection-controls__ripple").click()
             await page.wait_for_timeout(_jitter(600))
-
             await page.get_by_role("button", name="前往預約").click()
             await page.wait_for_timeout(_jitter(2000))
             try:
@@ -178,9 +210,10 @@ async def check_and_book() -> bool:
             except AsyncPlaywrightTimeoutError:
                 pass
 
+            # ── 找目標日期列 ──
             target_row = page.locator(f"tr:has(td:has-text('{TARGET_DATE}'))").first
             if await target_row.count() == 0:
-                log.warning(f"找不到 {TARGET_DATE} 的列，頁面可能尚未開放該日期")
+                log.warning(f"找不到 {TARGET_DATE} 的列，頁面可能尚未開放")
                 return False
 
             is_full     = await target_row.locator(":has-text('已滿')").count() > 0
@@ -189,22 +222,61 @@ async def check_and_book() -> bool:
             if is_full:
                 log.info(f"❌ {TARGET_DATE} 已滿")
                 return False
-            elif is_bookable:
-                log.info(f"✅ {TARGET_DATE} 可以預約！")
-                now_str = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-                send_notifications(
-                    f"【{TARGET_DATE} 停車位可以預約了！】\n"
-                    f"偵測時間：{now_str}\n"
-                    f"請立即前往預約！"
-                )
-                return True
-            else:
-                log.warning(f"⚠️ {TARGET_DATE} 狀態未知，請手動確認")
+
+            if not is_bookable:
+                log.warning(f"⚠️ {TARGET_DATE} 狀態未知")
                 return False
+
+            # ── 可預約：發送通知 1 ──
+            log.info(f"✅ {TARGET_DATE} 可以預約！開始自動填單...")
+            notify_available()
+
+            # ── 點擊「預約」按鈕 ──
+            book_btn = target_row.locator("button, a").filter(has_text="預約").first
+            await book_btn.click()
+            await page.wait_for_timeout(_jitter(1500))
+
+            # ── 填入停放天數 ──
+            days_field = page.get_by_role("textbox", name="停放天數")
+            await days_field.click()
+            await days_field.fill(str(PARKING_DAYS))
+            await page.wait_for_timeout(_jitter(500))
+
+            # ── 填入姓名 ──
+            name_field = page.get_by_role("textbox", name="姓名")
+            await name_field.click()
+            await name_field.fill(BOOKER_NAME)
+            await page.wait_for_timeout(_jitter(500))
+
+            # ── 填入車牌號碼 ──
+            plate_field = page.get_by_role("textbox", name="車牌號碼 (例: AA-1234)")
+            await plate_field.fill(BOOKER_PLATE)
+            await page.wait_for_timeout(_jitter(500))
+
+            # ── 點擊「送出」 ──
+            await page.get_by_role("button", name="送出").click()
+            await page.wait_for_timeout(_jitter(3000))
+            try:
+                await page.wait_for_load_state("networkidle", timeout=10_000)
+            except AsyncPlaywrightTimeoutError:
+                pass
+
+            # ── 判斷是否成功（找成功提示文字）──
+            success_indicators = ["預約成功", "完成", "成功", "已預約"]
+            page_text = await page.inner_text("body")
+            if any(kw in page_text for kw in success_indicators):
+                log.info("🎉 預約成功！")
+                notify_booked_success()
+            else:
+                log.warning("⚠️ 送出後未偵測到成功訊息，可能已成功但頁面格式不同，或預約失敗")
+                notify_booked_failed("送出後未偵測到明確成功訊息，請手動確認")
+
+            return True   # 不論成功失敗都停止輪詢
 
         except AsyncPlaywrightTimeoutError as e:
             log.error(f"頁面操作逾時：{e}")
-            return False
+            notify_booked_failed(f"頁面逾時：{e}")
+            return True   # 已嘗試，停止輪詢避免重複送出
         except Exception as e:
             log.error(f"執行時發生例外：{e}", exc_info=True)
             return False
@@ -213,23 +285,23 @@ async def check_and_book() -> bool:
 
 
 # ─────────────────────────────────────────────
-# 主程式：支援多輪模式（GitHub Actions 用）
+# 主程式
 # ─────────────────────────────────────────────
 
 async def main():
-    log.info(f"停車場預約 Agent | 目標：{TARGET_DATE} | 執行輪數：{ROUNDS}")
+    log.info(f"停車場預約 Agent | 目標：{TARGET_DATE} | 停放天數：{PARKING_DAYS} | 輪數：{ROUNDS}")
 
     for round_num in range(1, ROUNDS + 1):
         if ROUNDS > 1:
             log.info(f"── 第 {round_num}/{ROUNDS} 輪 ──")
 
-        found = await check_and_book()
-        if found:
-            log.info("已通知，結束所有輪次")
+        done = await check_and_book()
+        if done:
+            log.info("已處理完畢，結束所有輪次")
             return
 
         if round_num < ROUNDS:
-            wait_sec = _jitter(60_000, pct=0.15) // 1000   # ~60 秒 ± 15%
+            wait_sec = _jitter(60_000, pct=0.15) // 1000
             log.info(f"等待 {wait_sec} 秒後進行下一輪...")
             await asyncio.sleep(wait_sec)
 

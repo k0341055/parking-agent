@@ -57,5 +57,8 @@ jobs:
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
           GMAIL_RECIPIENTS: ${{ secrets.GMAIL_RECIPIENTS }}
+          BOOKER_NAME: ${{ secrets.BOOKER_NAME }}
+          BOOKER_PLATE: ${{ secrets.BOOKER_PLATE }}
+          PARKING_DAYS: "5"
           CHECK_ROUNDS: "5"
         run: python parking_book/parking_agent_v2.py
