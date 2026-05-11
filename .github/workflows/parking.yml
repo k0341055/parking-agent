@@ -1,6 +1,8 @@
 name: Parking Availability Check
 
 on:
+  repository_dispatch:
+    types: [trigger]
   schedule:
     # GitHub Actions cron 最短間隔為 5 分鐘
     # 解法：每次 workflow 內部執行 5 輪，每輪間隔 ~60 秒 → 實質每分鐘偵測一次
