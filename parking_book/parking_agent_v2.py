@@ -237,80 +237,80 @@ async def check_and_book() -> bool:
             if not is_bookable:
                 log.warning(f"⚠️ {TARGET_DATE} 狀態未知")
                 return False
+
+            # ── 可預約：發送通知 1 ──
+            log.info(f"✅ {TARGET_DATE} 可以預約！開始自動填單...")
+            notify_available()
+
+            # ── 點擊「預約」按鈕 ──
+            book_btn = target_row.locator("button, a").filter(has_text="預約").first
+            await book_btn.click()
+            await page.wait_for_timeout(_jitter(1500))
+
+            # ── 填入停放天數 ──
+            days_field = page.get_by_role("textbox", name="停放天數")
+            await days_field.click()
+            await days_field.fill(str(PARKING_DAYS))
+            await page.wait_for_timeout(_jitter(500))
+
+            # ── 填入姓名 ──
+            name_field = page.get_by_role("textbox", name="姓名")
+            await name_field.click()
+            await name_field.fill(BOOKER_NAME)
+            await page.wait_for_timeout(_jitter(500))
+
+            # ── 填入車牌號碼 ──
+            plate_field = page.get_by_role("textbox", name="車牌號碼 (例: AA-1234)")
+            await plate_field.fill(BOOKER_PLATE)
+            await page.wait_for_timeout(_jitter(500))
+
+            # ── 點擊「送出」（送出後設旗標，之後的逾時才需通知）──
+            await page.get_by_role("button", name="送出").click()
+            submitted = True
+            log.info("已點擊送出，等待結果...")
+            await page.wait_for_timeout(_jitter(3000))
+            try:
+                await page.wait_for_load_state("networkidle", timeout=10_000)
+            except AsyncPlaywrightTimeoutError:
+                pass
+
+            # ── 關閉送出後跳出的確認/結果視窗 ──
+            try:
+                close_btn = page.get_by_role("button").nth(2)
+                if await close_btn.count() > 0 and await close_btn.is_visible(timeout=3000):
+                    await close_btn.click()
+                    await page.wait_for_timeout(_jitter(1000))
+                    log.info("已關閉跳出視窗")
+            except Exception:
+                pass  # 視窗不存在或已自動關閉，略過
+
+            # ── 判斷是否成功（找成功提示文字）──
+            success_indicators = ["預約成功", "完成", "成功", "已預約"]
+            page_text = await page.inner_text("body")
+            if any(kw in page_text for kw in success_indicators):
+                log.info("🎉 預約成功！")
+                notify_booked_success()
             else:
-              # ── 可預約：發送通知 1 ──
-              log.info(f"✅ {TARGET_DATE} 可以預約！開始自動填單...")
-              notify_available()
-  
-              # ── 點擊「預約」按鈕 ──
-              book_btn = target_row.locator("button, a").filter(has_text="預約").first
-              await book_btn.click()
-              await page.wait_for_timeout(_jitter(1500))
-  
-              # ── 填入停放天數 ──
-              days_field = page.get_by_role("textbox", name="停放天數")
-              await days_field.click()
-              await days_field.fill(str(PARKING_DAYS))
-              await page.wait_for_timeout(_jitter(500))
-  
-              # ── 填入姓名 ──
-              name_field = page.get_by_role("textbox", name="姓名")
-              await name_field.click()
-              await name_field.fill(BOOKER_NAME)
-              await page.wait_for_timeout(_jitter(500))
-  
-              # ── 填入車牌號碼 ──
-              plate_field = page.get_by_role("textbox", name="車牌號碼 (例: AA-1234)")
-              await plate_field.fill(BOOKER_PLATE)
-              await page.wait_for_timeout(_jitter(500))
-  
-              # ── 點擊「送出」（送出後設旗標，之後的逾時才需通知）──
-              await page.get_by_role("button", name="送出").click()
-              submitted = True
-              log.info("已點擊送出，等待結果...")
-              await page.wait_for_timeout(_jitter(3000))
-              try:
-                  await page.wait_for_load_state("networkidle", timeout=10_000)
-              except AsyncPlaywrightTimeoutError:
-                  pass
-  
-              # ── 關閉送出後跳出的確認/結果視窗 ──
-              try:
-                  close_btn = page.get_by_role("button").nth(2)
-                  if await close_btn.count() > 0 and await close_btn.is_visible(timeout=3000):
-                      await close_btn.click()
-                      await page.wait_for_timeout(_jitter(1000))
-                      log.info("已關閉跳出視窗")
-              except Exception:
-                  pass  # 視窗不存在或已自動關閉，略過
-  
-              # ── 判斷是否成功（找成功提示文字）──
-              success_indicators = ["預約成功", "完成", "成功", "已預約"]
-              page_text = await page.inner_text("body")
-              if any(kw in page_text for kw in success_indicators):
-                  log.info("🎉 預約成功！")
-                  notify_booked_success()
-              else:
-                  log.warning("⚠️ 送出後未偵測到成功訊息，可能已成功但頁面格式不同，或預約失敗")
-                  notify_booked_failed("送出後未偵測到明確成功訊息，請手動確認")
-  
-              return True   # 不論成功失敗都停止輪詢
-  
-          except AsyncPlaywrightTimeoutError as e:
-              if submitted:
-                  # 送出後逾時：狀態不明，需通知
-                  log.error(f"送出後頁面逾時，狀態不明：{e}")
-                  notify_booked_failed("送出後頁面逾時，請手動確認是否預約成功")
-                  return True
-              else:
-                  # 送出前逾時（如重新導向）：僅 log，不通知，下一輪重試
-                  log.warning(f"送出前頁面逾時（可能被重新導向），關閉瀏覽器重試，本輪跳過（不通知）：{e}")
-                  return False
-          except Exception as e:
-              log.error(f"執行時發生例外：{e}", exc_info=True)
-              return False
-          finally:
-              await browser.close()
+                log.warning("⚠️ 送出後未偵測到成功訊息，可能已成功但頁面格式不同，或預約失敗")
+                notify_booked_failed("送出後未偵測到明確成功訊息，請手動確認")
+
+            return True   # 不論成功失敗都停止輪詢
+
+        except AsyncPlaywrightTimeoutError as e:
+            if submitted:
+                # 送出後逾時：狀態不明，需通知
+                log.error(f"送出後頁面逾時，狀態不明：{e}")
+                notify_booked_failed("送出後頁面逾時，請手動確認是否預約成功")
+                return True
+            else:
+                # 送出前逾時（如重新導向）：僅 log，不通知，下一輪重試
+                log.warning(f"送出前頁面逾時（可能被重新導向），關閉瀏覽器重試，本輪跳過（不通知）：{e}")
+                return False
+        except Exception as e:
+            log.error(f"執行時發生例外：{e}", exc_info=True)
+            return False
+        finally:
+            await browser.close()
 
 
 # ─────────────────────────────────────────────
