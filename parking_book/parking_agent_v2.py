@@ -167,6 +167,59 @@ def notify_booked_failed(reason: str):
     notify_gmail(subject="⚠️ 停車自動預約失敗，請手動操作！", body=msg)
 
 # ─────────────────────────────────────────────
+# 預約記錄驗證
+# ─────────────────────────────────────────────
+
+async def verify_booking(page) -> bool:
+    """
+    預約完成後，前往查詢記錄確認是否真的成功。
+    回傳 True = 找到記錄；False = 找不到或例外。
+    """
+    try:
+        log.info("開始驗證預約記錄...")
+
+        # 回到平台首頁
+        await page.get_by_role("link", name="預約停車平台").click()
+        await page.wait_for_timeout(_jitter(1500))
+        try:
+            await page.wait_for_load_state("networkidle", timeout=10_000)
+        except AsyncPlaywrightTimeoutError:
+            pass
+
+        # 進入選單頁（點第一個「前往」）
+        await page.get_by_role("link", name="前往").first.click()
+        await page.wait_for_timeout(_jitter(1000))
+
+        # 找「預約記錄」那一列的「前往」
+        record_row = page.locator("tr, li, div").filter(has_text="預約記錄").first
+        await record_row.get_by_role("link", name="前往").click()
+        await page.wait_for_timeout(_jitter(1500))
+        try:
+            await page.wait_for_load_state("networkidle", timeout=10_000)
+        except AsyncPlaywrightTimeoutError:
+            pass
+
+        # 輸入車牌查詢
+        plate_field = page.get_by_role("textbox", name="車號 (例: AA-1234)")
+        await plate_field.click()
+        await plate_field.fill(BOOKER_PLATE)
+        await page.get_by_role("button", name="查 詢").click()
+        await page.wait_for_timeout(_jitter(2000))
+
+        # 確認結果含目標日期（格式轉換：05-23 → 05/23）
+        page_text = await page.inner_text("body")
+        date_fragment = TARGET_DATE.replace("-", "/")
+        if date_fragment in page_text:
+            log.info(f"✅ 預約記錄確認：找到 {date_fragment}")
+            return True
+        log.warning(f"⚠️ 查詢記錄中未找到 {date_fragment}")
+        return False
+    except Exception as e:
+        log.error(f"驗證預約記錄例外：{e}", exc_info=True)
+        return False
+
+
+# ─────────────────────────────────────────────
 # 核心檢查與自動預約
 # ─────────────────────────────────────────────
 
@@ -237,7 +290,7 @@ async def check_and_book() -> bool:
             if not is_bookable:
                 log.warning(f"⚠️ {TARGET_DATE} 狀態未知")
                 return False
-
+            
             # ── 可預約：發送通知 1 ──
             log.info(f"✅ {TARGET_DATE} 可以預約！開始自動填單...")
             notify_available()
@@ -284,15 +337,20 @@ async def check_and_book() -> bool:
             except Exception:
                 pass  # 視窗不存在或已自動關閉，略過
 
-            # ── 判斷是否成功（找成功提示文字）──
-            success_indicators = ["預約成功", "完成", "成功", "已預約"]
+            # ── 判斷是否成功（精確比對完成訊息，再查詢記錄雙重確認）──
             page_text = await page.inner_text("body")
-            if any(kw in page_text for kw in success_indicators):
-                log.info("🎉 預約成功！")
-                notify_booked_success()
+            if "您已完成線上預約登記" in page_text:
+                log.info("表單顯示完成，開始查詢記錄雙重確認...")
+                verified = await verify_booking(page)
+                if verified:
+                    log.info("🎉 預約成功並已確認記錄！")
+                    notify_booked_success()
+                else:
+                    log.warning("⚠️ 表單顯示完成，但查詢記錄未找到")
+                    notify_booked_failed("預約頁面顯示完成，但查詢記錄未找到，請手動確認")
             else:
-                log.warning("⚠️ 送出後未偵測到成功訊息，可能已成功但頁面格式不同，或預約失敗")
-                notify_booked_failed("送出後未偵測到明確成功訊息，請手動確認")
+                log.warning("⚠️ 送出後未偵測到完成訊息，可能表單未成功送出")
+                notify_booked_failed("送出後未偵測到明確完成訊息，請手動確認")
 
             return True   # 不論成功失敗都停止輪詢
 

@@ -38,10 +38,12 @@ flowchart TD
         CHK -->|"已滿"| RETRY
         CHK -->|"可預約"| N1["📣 通知 1\n停車位可以預約！\n自動填單進行中..."]
         N1 --> FORM["📝 填入：停放天數 / 姓名 / 車牌\n按送出 → submitted = True\n關閉跳出視窗"]
-        FORM --> RES{"預約結果"}
-        RES -->|"偵測到成功訊息"| OK["✅ 通知 2\n預約成功！"]
-        RES -->|"未偵測到成功"| NG["⚠️ 通知 2\n請手動確認"]
+        FORM --> RES{"您已完成線上\n預約登記？"}
+        RES -->|"否"| NG["⚠️ 通知 2\n請手動確認"]
         RES -->|"送出後逾時\nsubmitted=True"| POSTTIMEOUT["⚠️ 通知 2\n送出後逾時\n請手動確認"]
+        RES -->|"是"| VERIFY["🔍 查詢預約記錄\n輸入車牌 → 查詢\n確認日期出現在結果中"]
+        VERIFY -->|"找到記錄"| OK["✅ 通知 2\n預約成功！"]
+        VERIFY -->|"找不到記錄"| NG2["⚠️ 通知 2\n表單顯示完成\n但記錄未找到\n請手動確認"]
     end
 
     subgraph NOTIFY["📬 通知層"]
@@ -54,6 +56,7 @@ flowchart TD
     N1 --> NOTIFY
     OK --> NOTIFY
     NG --> NOTIFY
+    NG2 --> NOTIFY
     POSTTIMEOUT --> NOTIFY
 ```
 
@@ -173,8 +176,9 @@ python parking_agent_v2.py
 | 頁面導航逾時 / 重新導向 | log warning，關閉瀏覽器，下一輪重試 | ❌ 不通知 |
 | 填單過程逾時（送出前） | log warning，下一輪重試 | ❌ 不通知 |
 | 送出後逾時（狀態不明） | log error，停止輪詢 | ✅ 通知（請手動確認） |
-| 預約成功 | log info，停止輪詢 | ✅ 通知成功 |
-| 未偵測到成功訊息 | log warning，停止輪詢 | ✅ 通知（請手動確認） |
+| 未偵測到「您已完成線上預約登記」| log warning，停止輪詢 | ✅ 通知（請手動確認） |
+| 偵測到完成訊息 → 查詢記錄找到日期 | log info，停止輪詢 | ✅ 通知預約成功 |
+| 偵測到完成訊息 → 查詢記錄找不到 | log warning，停止輪詢 | ✅ 通知（請手動確認） |
 
 ---
 
