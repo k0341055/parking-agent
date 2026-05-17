@@ -31,7 +31,7 @@ from playwright.async_api import async_playwright, TimeoutError as AsyncPlaywrig
 # 設定區
 # ─────────────────────────────────────────────
 
-TARGET_DATE   = "05-23"   # 頁面日期格式 "2026-05-23 (六)"，模糊比對
+TARGET_DATE   = "06-07"   # 頁面日期格式 "2026-05-23 (六)"，模糊比對
 PARKING_DAYS  = int(os.environ.get("PARKING_DAYS", "5"))   # 停放天數
 
 # GitHub Actions 模式：每次 workflow 執行幾輪（每輪間隔 ~60 秒）
