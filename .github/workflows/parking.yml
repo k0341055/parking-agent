@@ -15,7 +15,7 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 10   # install ~2min + 5輪×~65s = ~7.5min，留緩衝
+    timeout-minutes: 12   # install ~2min + 12輪×(~12s執行 + ~22s等待) = ~8.5min，留緩衝
 
     steps:
       - name: Checkout code
@@ -60,5 +60,5 @@ jobs:
           BOOKER_NAME: ${{ secrets.BOOKER_NAME }}
           BOOKER_PLATE: ${{ secrets.BOOKER_PLATE }}
           PARKING_DAYS: "5"
-          CHECK_ROUNDS: "5"
+          CHECK_ROUNDS: "12"
         run: python parking_book/parking_agent_v2.py

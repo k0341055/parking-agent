@@ -193,29 +193,33 @@ def notify_already_booked_confirmed():
 async def verify_booking(page) -> bool:
     """
     預約完成後，前往查詢記錄確認是否真的成功。
-    回傳 True = 找到記錄；False = 找不到或例外。
+    回傳 True = 找到記錄；False = 找不到或導航失敗。
+    用 goto 重進首頁，避免 click 導航在 dialog 後頁面狀態不穩定。
     """
     try:
         log.info("開始驗證預約記錄...")
 
-        # 回到平台首頁
-        await page.get_by_role("link", name="預約停車平台").click()
-        await page.wait_for_timeout(_jitter(1500))
-        try:
-            await page.wait_for_load_state("networkidle", timeout=10_000)
-        except AsyncPlaywrightTimeoutError:
-            pass
+        # 直接重進首頁（比 click link 更可靠）
+        await page.goto(
+            "https://pcc.youparking.com.tw/parkingreserve/#/",
+            wait_until="networkidle",
+            timeout=20_000,
+        )
+        await page.wait_for_timeout(_jitter(800))
 
         # 進入選單頁（點第一個「前往」）
         await page.get_by_role("link", name="前往").first.click()
-        await page.wait_for_timeout(_jitter(1000))
+        await page.wait_for_timeout(_jitter(600))
 
         # 找「預約記錄」那一列的「前往」
         record_row = page.locator("tr, li, div").filter(has_text="預約記錄").first
+        if await record_row.count() == 0:
+            log.warning("⚠️ 找不到「預約記錄」入口")
+            return False
         await record_row.get_by_role("link", name="前往").click()
-        await page.wait_for_timeout(_jitter(1500))
+        await page.wait_for_timeout(_jitter(800))
         try:
-            await page.wait_for_load_state("networkidle", timeout=10_000)
+            await page.wait_for_load_state("networkidle", timeout=8_000)
         except AsyncPlaywrightTimeoutError:
             pass
 
@@ -224,7 +228,7 @@ async def verify_booking(page) -> bool:
         await plate_field.click()
         await plate_field.fill(BOOKER_PLATE)
         await page.get_by_role("button", name="查 詢").click()
-        await page.wait_for_timeout(_jitter(2000))
+        await page.wait_for_timeout(_jitter(1500))
 
         # 確認結果含目標日期（格式轉換：05-23 → 05/23）
         page_text = await page.inner_text("body")
@@ -232,10 +236,10 @@ async def verify_booking(page) -> bool:
         if date_fragment in page_text:
             log.info(f"✅ 預約記錄確認：找到 {date_fragment}")
             return True
-        log.warning(f"⚠️ 查詢記錄中未找到 {date_fragment}")
+        log.warning(f"⚠️ 查詢記錄中未找到 {date_fragment}，頁面片段：{page_text[:200]!r}")
         return False
     except Exception as e:
-        log.error(f"驗證預約記錄例外：{e}", exc_info=True)
+        log.error(f"驗證預約記錄例外（導航失敗）：{e}", exc_info=True)
         return False
 
 
@@ -260,7 +264,7 @@ async def check_and_book() -> bool:
     async with async_playwright() as p:
         browser = await p.chromium.launch(
             headless=True,
-            slow_mo=_jitter(400),
+            slow_mo=_jitter(80),
         )
         context = await browser.new_context(
             user_agent=ua,
@@ -281,16 +285,16 @@ async def check_and_book() -> bool:
                 log.warning("導航逾時或被重新導向，關閉瀏覽器，本輪跳過（不通知）")
                 return False
 
-            await page.wait_for_timeout(_jitter(1500))
+            await page.wait_for_timeout(_jitter(800))
 
             await page.get_by_role("link", name="前往").first.click()
-            await page.wait_for_timeout(_jitter(1000))
+            await page.wait_for_timeout(_jitter(500))
             await page.locator(".v-input--selection-controls__ripple").click()
-            await page.wait_for_timeout(_jitter(600))
+            await page.wait_for_timeout(_jitter(300))
             await page.get_by_role("button", name="前往預約").click()
-            await page.wait_for_timeout(_jitter(2000))
+            await page.wait_for_timeout(_jitter(1000))
             try:
-                await page.wait_for_load_state("networkidle", timeout=10_000)
+                await page.wait_for_load_state("networkidle", timeout=8_000)
             except AsyncPlaywrightTimeoutError:
                 pass
 
@@ -318,24 +322,24 @@ async def check_and_book() -> bool:
             # ── 點擊「預約」按鈕 ──
             book_btn = target_row.locator("button, a").filter(has_text="預約").first
             await book_btn.click()
-            await page.wait_for_timeout(_jitter(1500))
+            await page.wait_for_timeout(_jitter(800))
 
             # ── 填入停放天數 ──
             days_field = page.get_by_role("textbox", name="停放天數")
             await days_field.click()
             await days_field.fill(str(PARKING_DAYS))
-            await page.wait_for_timeout(_jitter(500))
+            await page.wait_for_timeout(_jitter(200))
 
             # ── 填入姓名 ──
             name_field = page.get_by_role("textbox", name="姓名")
             await name_field.click()
             await name_field.fill(BOOKER_NAME)
-            await page.wait_for_timeout(_jitter(500))
+            await page.wait_for_timeout(_jitter(200))
 
             # ── 填入車牌號碼 ──
             plate_field = page.get_by_role("textbox", name="車牌號碼 (例: AA-1234)")
             await plate_field.fill(BOOKER_PLATE)
-            await page.wait_for_timeout(_jitter(500))
+            await page.wait_for_timeout(_jitter(200))
 
             # ── 點擊「送出」（送出後設旗標，之後的逾時才需通知）──
             await page.get_by_role("button", name="送出").click()
@@ -391,7 +395,7 @@ async def check_and_book() -> bool:
                     log.warning("⚠️ 顯示已登記，但查詢記錄未找到")
                     notify_booked_failed("送出時提示已登記，但查詢記錄未找到，請手動確認")
 
-            # 情況 C：未知結果 → 截圖供 debug
+            # 情況 C：未知結果 → 截圖供 debug，繼續下一輪重試（不通知、不停止）
             else:
                 screenshot_path = f"/tmp/parking_unknown_{datetime.now().strftime('%Y%m%d_%H%M%S')}.png"
                 try:
@@ -399,10 +403,10 @@ async def check_and_book() -> bool:
                     log.warning(f"⚠️ 未知結果截圖已存：{screenshot_path}")
                 except Exception:
                     pass
-                log.warning(f"⚠️ 送出後未偵測到完成訊息，頁面內容片段：{page_text[:200]!r}")
-                notify_booked_failed("送出後未偵測到明確完成訊息，請手動確認")
+                log.warning(f"⚠️ 送出後未偵測到完成訊息，本輪跳過繼續重試，頁面片段：{page_text[:200]!r}")
+                return False   # 繼續下一輪重試，不停止
 
-            return True   # 不論成功失敗都停止輪詢
+            return True   # 情況 A / B 已處理完畢，停止輪詢
 
         except AsyncPlaywrightTimeoutError as e:
             if submitted:
@@ -438,7 +442,7 @@ async def main():
             return
 
         if round_num < ROUNDS:
-            wait_sec = _jitter(60_000, pct=0.15) // 1000
+            wait_sec = _jitter(22_000, pct=0.15) // 1000
             log.info(f"等待 {wait_sec} 秒後進行下一輪...")
             await asyncio.sleep(wait_sec)
 
