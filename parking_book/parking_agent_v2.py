@@ -54,17 +54,58 @@ BOOKER_NAME  = os.environ["BOOKER_NAME"]    # 姓名
 BOOKER_PLATE = os.environ["BOOKER_PLATE"]   # 車牌號碼
 
 # ─────────────────────────────────────────────
-# 反封鎖：隨機 User-Agent 池
+# 反封鎖：隨機組合 User-Agent
 # ─────────────────────────────────────────────
 
-_USER_AGENTS = [
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
-    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.4.1 Safari/605.1.15",
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:125.0) Gecko/20100101 Firefox/125.0",
-    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+_UA_OS = [
+    "Windows NT 10.0; Win64; x64",
+    "Windows NT 11.0; Win64; x64",
+    "Macintosh; Intel Mac OS X 10_15_7",
+    "Macintosh; Intel Mac OS X 13_4",
+    "Macintosh; Intel Mac OS X 14_0",
+    "X11; Linux x86_64",
+    "X11; Ubuntu; Linux x86_64",
 ]
+
+_UA_CHROME_VERSIONS = list(range(118, 126))   # 118~125 皆為真實存在版本
+_UA_FIREFOX_VERSIONS = list(range(118, 127))  # 118~126
+_UA_SAFARI_VERSIONS = [
+    ("605.1.15", "17.0"),
+    ("605.1.15", "17.2"),
+    ("605.1.15", "17.4.1"),
+    ("605.1.15", "17.5"),
+]
+_UA_WEBKIT_BUILD = list(range(530, 538))      # WebKit 次版本號微幅隨機
+
+def _random_user_agent() -> str:
+    browser = random.choices(["chrome", "firefox", "safari"], weights=[65, 25, 10])[0]
+    os_str  = random.choice(_UA_OS)
+
+    if browser == "chrome":
+        major   = random.choice(_UA_CHROME_VERSIONS)
+        minor   = random.randint(0, 9)
+        webkit  = f"537.{random.choice(_UA_WEBKIT_BUILD)}"
+        return (
+            f"Mozilla/5.0 ({os_str}) "
+            f"AppleWebKit/{webkit} (KHTML, like Gecko) "
+            f"Chrome/{major}.0.{random.randint(5000,7000)}.{minor} "
+            f"Safari/{webkit}"
+        )
+    elif browser == "firefox":
+        major = random.choice(_UA_FIREFOX_VERSIONS)
+        minor = random.randint(0, 3)
+        return (
+            f"Mozilla/5.0 ({os_str}; rv:{major}.{minor}) "
+            f"Gecko/20100101 Firefox/{major}.{minor}"
+        )
+    else:  # safari（只對 Mac 有意義）
+        mac_os = random.choice([s for s in _UA_OS if "Macintosh" in s])
+        webkit_ver, safari_ver = random.choice(_UA_SAFARI_VERSIONS)
+        return (
+            f"Mozilla/5.0 ({mac_os}) "
+            f"AppleWebKit/{webkit_ver} (KHTML, like Gecko) "
+            f"Version/{safari_ver} Safari/{webkit_ver}"
+        )
 
 def _random_viewport():
     presets = [
@@ -73,6 +114,8 @@ def _random_viewport():
         {"width": 1366, "height": 768},
         {"width": 1280, "height": 800},
         {"width": 1536, "height": 864},
+        {"width": 1600, "height": 900},
+        {"width": 2560, "height": 1440},
     ]
     return random.choice(presets)
 
@@ -252,7 +295,7 @@ async def check_and_book() -> bool:
     回傳 True 表示已處理完畢（不論成功或失敗），停止後續輪次。
     回傳 False 表示尚未開放或導航失敗，繼續下一輪。
     """
-    ua       = random.choice(_USER_AGENTS)
+    ua       = _random_user_agent()
     viewport = _random_viewport()
     log.info(f"開始檢查 {TARGET_DATE} | UA: ...{ua[-40:]} | {viewport['width']}x{viewport['height']}")
 
