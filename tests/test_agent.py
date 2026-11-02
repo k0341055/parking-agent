@@ -316,5 +316,58 @@ class HealthTest(unittest.TestCase):
         self.assertEqual((health["fails"], h.sent), (0, []))
 
 
+class RoundLogTest(unittest.TestCase):
+    def run_round(self, h, b, **fetch):
+        with mock.patch.object(agent, "fetch_left", **fetch), self.assertLogs(agent.log, "INFO") as logs:
+            asyncio.run(agent.check_round([b], h.status, SETTINGS, {"fails": 0}, 3))
+        return logs.output
+
+    def round_line(self, output):
+        lines = [m for m in output if "第 3 輪｜Booking_1" in m]
+        self.assertEqual(len(lines), 1, output)
+        return lines[0]
+
+    def test_every_situation_prints_one_line(self):
+        b = make_booking()
+        day = b.date.isoformat()
+        for fetch, expected in [
+            (dict(return_value={day: 0}), "已滿"),
+            (dict(return_value={}), "不在開放日期內"),
+            (dict(return_value=None), "網站暫停登記"),
+            (dict(side_effect=agent.requests.ConnectionError()), "查詢失敗"),
+        ]:
+            line = self.round_line(self.run_round(Harness(self), b, **fetch))
+            self.assertIn(day, line)
+            self.assertIn(expected, line)
+
+    def test_seat_line_comes_before_the_attempt_and_has_no_pii(self):
+        h = Harness(self, outcomes=[agent.Outcome("failed", "x")])
+        b = make_booking()
+        output = self.run_round(h, b, return_value={b.date.isoformat(): 2})
+        line = self.round_line(output)
+        self.assertIn("有名額，剩 2 位", line)
+        result = next(m for m in output if "自動預約結果" in m)
+        self.assertLess(output.index(line), output.index(result))
+        self.assertNotIn(NAME, "\n".join(output))
+        self.assertNotIn(PLATE, "\n".join(output))
+
+    def test_monitor_numbers_each_round(self):
+        h = Harness(self)
+        b = make_booking()
+
+        async def fake_sleep(_):
+            h.now += timedelta(minutes=2)
+
+        with mock.patch.object(agent, "fetch_left", return_value={b.date.isoformat(): 0}), \
+                mock.patch.object(agent, "save_status"), \
+                mock.patch.object(agent, "reload_remote_config", return_value=None), \
+                mock.patch.object(agent.asyncio, "sleep", fake_sleep), \
+                self.assertLogs(agent.log, "INFO") as logs:
+            asyncio.run(agent.monitor(dict(SETTINGS), [b], h.status))
+        for n in range(1, 5):
+            self.assertEqual(sum(f"第 {n} 輪｜" in m for m in logs.output), 1)
+        self.assertTrue(any("本次共檢查 4 輪" in m for m in logs.output))
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -833,7 +833,21 @@ async def check_booking(booking: Booking, lefts: dict | None, status: dict, sett
         await _handle_available(booking, left, status, settings)
 
 
-async def check_round(bookings: list, status: dict, settings: dict, health: dict):
+def _seat_summary(booking: Booking, results: dict) -> str:
+    """每輪的 log：看得出哪一輪開始有名額。repo 是公開的，這裡不放姓名和車牌。"""
+    where = f"{booking.alias} {SITES[booking.site]['name']} {booking.date}"
+    if booking.site not in results:
+        return f"{where}：查詢失敗"
+    lefts = results[booking.site]
+    if lefts is None:
+        return f"{where}：網站暫停登記"
+    left = lefts.get(booking.date.isoformat())
+    if left is None:
+        return f"{where}：不在開放日期內"
+    return f"{where}：有名額，剩 {left} 位" if left > 0 else f"{where}：已滿"
+
+
+async def check_round(bookings: list, status: dict, settings: dict, health: dict, round_num: int = 0):
     """檢查一輪；同一個停車場只查一次 API。"""
     sites = {b.site for b in bookings}
     results = {}
@@ -850,6 +864,7 @@ async def check_round(bookings: list, status: dict, settings: dict, health: dict
         await _alert_health(bookings, status)
 
     for booking in bookings:
+        log.info(f"第 {round_num} 輪｜{_seat_summary(booking, results)}")
         if booking.site in results:
             await check_booking(booking, results[booking.site], status, settings)
 
@@ -898,7 +913,7 @@ async def monitor(settings: dict, bookings: list, status: dict):
             log.info("監控關閉或沒有需要監看的預約，結束")
             break
         round_num += 1
-        await check_round(active, status, settings, health)
+        await check_round(active, status, settings, health, round_num)
         save_status(status, {b.alias for b in bookings})
 
         now = now_tw()
