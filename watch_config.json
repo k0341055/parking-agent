@@ -8,7 +8,10 @@
     "reminder_minutes": 60
   },
   "recipients": {
-    "Recipient_1": {}
+    "Recipient_1": {},
+    "Recipient_2": {
+      "email": true
+    }
   },
   "bookings": [
     {
