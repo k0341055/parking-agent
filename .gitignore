@@ -27,3 +27,6 @@ debug_*.png
 
 # macOS
 .DS_Store
+
+# 測試時快取的網站靜態檔
+tests/.site_cache/

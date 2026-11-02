@@ -1,3 +1,5 @@
+> 這份是舊版 `parking_agent.py` 的說明。目前版本請看 [repo 根目錄的 README](../README.md)。
+
 # 停車場預約 AI Agent
 
 自動偵測 https://pcc.youparking.com.tw/parkingreserve/#/reservedlist/1

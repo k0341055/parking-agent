@@ -1,0 +1,1322 @@
+<!doctype html>
+<html lang="zh-Hant">
+<meta charset="utf-8">
+<meta name="robots" content="noindex, nofollow">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>停車預約監控</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Semi+Condensed:wght@600;700&family=Noto+Sans+TC:wght@400;500;700;900&display=swap">
+<style>
+/* Same visual language as the 寶可夢補貨監控 page: subway-line colours, numbered rings. */
+:root {
+  --bg: #f1f2f4;
+  --surface: #ffffff;
+  --ink: #15171c;
+  --muted: #5a606d;
+  --rule: #dadde3;
+  --soft: #e8eaee;
+  --line: #0079c2;
+  --r1: #0079c2;
+  --r2: #e85298;
+  --r3: #1d8549;
+  --r4: #a8802f;
+  --r5: #7a5cd6;
+  --r6: #d0620b;
+  --got: #1d8549;
+  --got-soft: #e3f3ea;
+  --out: #c03636;
+  --out-soft: #fbe7e7;
+  --warn-bg: #fff2dc;
+  --warn-ink: #774600;
+  --font-zh: "Noto Sans TC", -apple-system, "PingFang TC", "Microsoft JhengHei", system-ui, sans-serif;
+  --font-num: "Barlow Semi Condensed", "DIN Alternate", "Arial Narrow", system-ui, sans-serif;
+  --radius: 14px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1115; --surface: #181b21; --ink: #eceef3; --muted: #9da3b0; --rule: #2a2e36; --soft: #22262d;
+    --line: #2b97e0; --r1: #2b97e0; --r2: #f06aa8; --r3: #46c27b; --r4: #d4b886; --r5: #a08cf0; --r6: #ff9a4a;
+    --got: #46c27b; --got-soft: #16301f; --out: #f07070; --out-soft: #3a1c1c; --warn-bg: #352712; --warn-ink: #ffd08a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1115; --surface: #181b21; --ink: #eceef3; --muted: #9da3b0; --rule: #2a2e36; --soft: #22262d;
+  --line: #2b97e0; --r1: #2b97e0; --r2: #f06aa8; --r3: #46c27b; --r4: #d4b886; --r5: #a08cf0; --r6: #ff9a4a;
+  --got: #46c27b; --got-soft: #16301f; --out: #f07070; --out-soft: #3a1c1c; --warn-bg: #352712; --warn-ink: #ffd08a;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: var(--font-zh);
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-text-size-adjust: 100%;
+}
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+p { margin: 0; }
+a { color: inherit; }
+button, input, select { font: inherit; color: inherit; }
+code { font-size: .92em; background: var(--soft); padding: 1px 6px; border-radius: 5px; overflow-wrap: anywhere; }
+:focus-visible { outline: 3px solid var(--r1); outline-offset: 2px; border-radius: 6px; }
+
+.wrap {
+  max-width: 1080px;
+  margin: 0 auto;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+
+/* ---------- header ---------- */
+.hero { background: var(--surface); border-bottom: 1px solid var(--rule); }
+.hero .wrap { padding-block: 28px 20px; display: grid; gap: 14px; }
+.eyebrow {
+  font-family: var(--font-num); font-weight: 700; font-size: 14px; letter-spacing: .12em;
+  color: var(--muted); display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+}
+.route { display: inline-flex; gap: 4px; }
+.route i { width: 22px; height: 6px; border-radius: 3px; background: var(--c); display: block; }
+h1 { font-size: clamp(30px, 8vw, 44px); font-weight: 900; letter-spacing: .02em; line-height: 1.15; }
+.lede { color: var(--muted); max-width: 40em; }
+.summary { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; max-width: 640px; }
+.stat { background: var(--bg); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 2px; min-width: 0; }
+.stat .k { font-size: 12px; color: var(--muted); letter-spacing: .06em; }
+.stat .v { font-family: var(--font-num); font-weight: 700; font-size: 28px; line-height: 1.1; font-variant-numeric: tabular-nums; }
+.stat .s { font-size: 12px; color: var(--muted); }
+.stat.alert { background: var(--warn-bg); }
+.stat.alert .v, .stat.alert .k { color: var(--warn-ink); }
+
+.conn { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; font-size: 14px; }
+.conn .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--muted); flex: none; }
+.conn[data-state="ok"] .dot { background: var(--got); }
+.conn[data-state="busy"] .dot { background: var(--r6); animation: pulse 1s infinite alternate; }
+.conn[data-state="err"] .dot { background: var(--out); }
+.conn[data-state="err"] #connText { color: var(--out); font-weight: 500; }
+@keyframes pulse { to { opacity: .35; } }
+
+.btn {
+  border: 1.5px solid var(--rule); background: var(--surface); padding: 7px 14px; border-radius: 10px;
+  font-size: 14px; font-weight: 700; cursor: pointer; white-space: nowrap; text-decoration: none; display: inline-block;
+}
+.btn.primary { background: var(--ink); border-color: var(--ink); color: var(--surface); }
+.btn.sm { padding: 4px 10px; font-size: 13px; }
+.btn:disabled { opacity: .45; cursor: default; }
+.linkbtn { border: 0; background: none; padding: 0; color: var(--r1); font-weight: 700; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+
+.connect { background: var(--bg); border-radius: var(--radius); padding: 14px 16px; display: grid; gap: 10px; max-width: 640px; }
+.connect label { font-weight: 700; font-size: 14px; }
+.row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.row input { flex: 1 1 220px; min-width: 0; }
+input, select {
+  border: 1.5px solid var(--rule); background: var(--surface); border-radius: 10px; padding: 8px 12px; font-size: 15px; min-width: 0;
+}
+input[type="number"] { font: 600 16px var(--font-num); font-variant-numeric: tabular-nums; padding-inline: 10px; }
+input:disabled { opacity: .55; }
+.howto { margin: 0; padding-left: 20px; display: grid; gap: 4px; font-size: 13.5px; color: var(--muted); }
+.howto b { color: var(--ink); }
+
+.banner { border-radius: var(--radius); padding: 10px 14px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 6px 12px; align-items: center; background: var(--warn-bg); color: var(--warn-ink); max-width: 760px; }
+.banner b { font-weight: 700; }
+.banner .btn { color: var(--ink); }
+
+/* ---------- panels and forms ---------- */
+.panel { background: var(--surface); border-bottom: 1px solid var(--rule); }
+.panel .wrap { padding-block: 20px; display: grid; gap: 12px; }
+.panel h2 { font-size: 20px; font-weight: 900; }
+.form-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 12px 16px; align-items: end; }
+.field { display: grid; gap: 4px; min-width: 0; }
+.field > span { font-size: 12px; color: var(--muted); letter-spacing: .04em; }
+.field input, .field select { width: 100%; }
+.hint { font-size: 13px; color: var(--muted); }
+.preview { font-size: 13.5px; color: var(--muted); }
+.preview b { color: var(--ink); font-family: var(--font-num); font-size: 15px; font-variant-numeric: tabular-nums; }
+.preview .warn { color: var(--warn-ink); font-weight: 700; }
+.readonly-note { font-size: 14px; color: var(--warn-ink); background: var(--warn-bg); padding: 8px 12px; border-radius: 10px; }
+.range { display: flex; align-items: center; gap: 6px; }
+.range input { flex: 1; width: 0; }
+.switch-field { display: flex; gap: 10px; align-items: center; cursor: pointer; min-height: 42px; }
+.switch-field input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.switch { width: 44px; height: 26px; flex: none; border-radius: 999px; background: var(--rule); position: relative; transition: background .15s; }
+.switch::after { content: ""; position: absolute; top: 3px; left: 3px; width: 20px; height: 20px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgb(0 0 0 / .25); transition: transform .15s; }
+.switch-field input:checked + .switch { background: var(--got); }
+.switch-field input:checked + .switch::after { transform: translateX(18px); }
+.switch-field input:focus-visible + .switch { outline: 3px solid var(--r1); outline-offset: 2px; }
+.switch-field input:disabled + .switch { opacity: .5; }
+.switch-text { display: grid; line-height: 1.35; }
+.switch-text b { font-size: 14px; }
+.switch-text small { font-size: 12px; color: var(--muted); }
+
+.pills { display: flex; flex-wrap: wrap; gap: 6px; }
+.pill {
+  border: 1.5px solid var(--c); background: transparent; color: var(--ink); border-radius: 999px;
+  min-width: 40px; min-height: 30px; padding: 2px 10px; font-family: var(--font-num); font-weight: 700; font-size: 14px; cursor: pointer;
+}
+.pill[aria-pressed="true"] { background: var(--c); color: #fff; }
+.pill:disabled { cursor: default; }
+.pill:disabled[aria-pressed="false"] { opacity: .4; }
+
+/* ---------- board ---------- */
+.board { display: grid; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); gap: 16px; align-items: start; padding-block: 16px; }
+.zone { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); }
+.zone-head { display: flex; gap: 12px; align-items: center; padding: 14px 14px 12px; border-bottom: 6px solid var(--c); }
+.zone-head > div { min-width: 0; flex: 1; }
+.zone-head h2 { font-size: 20px; font-weight: 900; line-height: 1.2; }
+.zone-head .sub { color: var(--muted); font-size: 13px; }
+.bookings { --c: var(--line); }
+
+.ring {
+  --size: 40px;
+  width: var(--size); height: var(--size); flex: none; border-radius: 50%;
+  border: calc(var(--size) * .14) solid var(--c); background: var(--surface);
+  display: grid; place-items: center; font-family: var(--font-num); font-weight: 700;
+  font-size: calc(var(--size) * .4); line-height: 1; color: var(--ink);
+}
+
+.cards { list-style: none; margin: 0; padding: 0; }
+.card { display: grid; grid-template-columns: 40px minmax(0, 1fr); gap: 12px; padding: 14px; border-bottom: 1px solid var(--rule); }
+.card:last-child { border-bottom: 0; }
+.card.flash { animation: flash 1.6s ease-out; }
+@keyframes flash { from { background: color-mix(in srgb, var(--line) 22%, transparent); } }
+.body { display: grid; gap: 6px; min-width: 0; }
+.title-row { display: flex; flex-wrap: wrap; gap: 4px 10px; align-items: center; }
+.period { font-family: var(--font-num); font-size: 22px; font-weight: 700; line-height: 1.2; font-variant-numeric: tabular-nums; }
+.tag { font-size: 12px; font-weight: 700; padding: 2px 8px; border-radius: 6px; background: var(--soft); color: var(--muted); white-space: nowrap; }
+.tag.out { background: var(--out-soft); color: var(--out); }
+.tag.ok { background: var(--got-soft); color: var(--got); }
+.tag.warn { background: var(--warn-bg); color: var(--warn-ink); }
+.sub-line { font-size: 13.5px; color: var(--muted); overflow-wrap: anywhere; }
+.sub-line.warn { color: var(--warn-ink); font-weight: 500; }
+.assign { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.assign-k { font-size: 12px; color: var(--muted); margin-right: 2px; }
+.actions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 2px; }
+.readonly .edit-only { display: none !important; }
+.empty { padding: 18px 16px; color: var(--muted); font-size: 14px; }
+
+/* quick manual booking */
+.quick { background: var(--bg); border-radius: 12px; padding: 12px; display: grid; gap: 10px; margin-top: 4px; }
+.copies { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 8px; }
+.copy {
+  border: 1.5px solid var(--rule); background: var(--surface); border-radius: 10px; padding: 6px 10px; text-align: left; cursor: pointer; min-width: 0; display: grid; line-height: 1.3;
+}
+.copy:hover { border-color: var(--r1); }
+.copy small { font-size: 12px; color: var(--muted); }
+.copy b { font-size: 15px; overflow-wrap: anywhere; }
+.bm-link { cursor: grab; }
+
+/* recipients */
+.rcpts { display: grid; gap: 12px; }
+.rcpt-row { display: flex; gap: 10px; align-items: center; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+.rcpt-row:last-child { border-bottom: 0; }
+.rcpt-row .ring { --size: 34px; }
+.rcpt-row > div { min-width: 0; flex: 1; display: grid; line-height: 1.4; }
+.rcpt-row b { font-family: var(--font-num); font-size: 16px; letter-spacing: .02em; }
+.rcpt-row small { font-size: 12.5px; color: var(--muted); overflow-wrap: anywhere; }
+.rcpt-row small.warn { color: var(--warn-ink); font-weight: 700; }
+.icon {
+  width: 34px; height: 34px; border: 0; border-radius: 9px; background: transparent; color: var(--muted);
+  display: grid; place-items: center; cursor: pointer; flex: none;
+}
+.icon:hover { background: var(--soft); color: var(--ink); }
+.icon.danger:hover { background: var(--out-soft); color: var(--out); }
+.icon svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.rcpt-form { background: var(--surface); border: 1px solid var(--rule); border-radius: var(--radius); padding: 14px; display: grid; gap: 10px; }
+.add-rcpt {
+  border: 2px dashed var(--rule); background: transparent; border-radius: var(--radius); padding: 12px; font-weight: 700; color: var(--muted); cursor: pointer;
+}
+.add-rcpt:hover:not(:disabled) { color: var(--ink); border-color: var(--muted); }
+.add-rcpt:disabled { cursor: default; opacity: .6; }
+.map-note { font-size: 12.5px; color: var(--muted); padding-inline: 4px; }
+.map-note.warn { color: var(--warn-ink); background: var(--warn-bg); padding: 8px 10px; border-radius: 10px; }
+
+.toast {
+  position: fixed; left: 50%; bottom: max(20px, env(safe-area-inset-bottom, 0px)); transform: translateX(-50%); z-index: 60;
+  width: max-content; max-width: calc(100% - 32px); background: var(--ink); color: var(--surface);
+  padding: 10px 16px; border-radius: 12px; font-size: 14px; font-weight: 500; box-shadow: 0 8px 24px rgb(0 0 0 / .2);
+}
+
+.foot { padding-block: 16px 40px; display: grid; gap: 10px; }
+.foot h2 { font-size: 16px; font-weight: 900; }
+.foot ul { margin: 0; padding-left: 20px; display: grid; gap: 6px; font-size: 13.5px; color: var(--muted); max-width: 52em; }
+.foot b { color: var(--ink); }
+
+@media (max-width: 880px) { .board { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 480px) {
+  .summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .summary .stat:last-child { grid-column: 1 / -1; }
+}
+@media (prefers-reduced-motion: reduce) { * { animation: none !important; transition: none !important; } }
+</style>
+
+<body class="readonly">
+
+<header class="hero">
+  <div class="wrap">
+    <p class="eyebrow">
+      <span class="route"><i style="--c: var(--r1)"></i><i style="--c: var(--r3)"></i><i style="--c: var(--r2)"></i></span>
+      TAOYUAN AIRPORT · 停車預約
+    </p>
+    <h1>停車預約監控</h1>
+    <p class="lede">填好車牌、進場日和天數，日期一有名額就同時通知並自動送出。沒搶到也會告訴你原因，附上預填資料讓你馬上手動完成。</p>
+    <div class="summary">
+      <div class="stat"><span class="k">監看中</span><span class="v" id="sumWatch">–</span><span class="s" id="sumWatchSub"></span></div>
+      <div class="stat" id="sumManualBox"><span class="k">請人工預約</span><span class="v" id="sumManual">–</span><span class="s" id="sumManualSub"></span></div>
+      <div class="stat"><span class="k">已預約</span><span class="v" id="sumBooked">–</span><span class="s" id="sumBookedSub"></span></div>
+    </div>
+    <div class="conn" id="conn" data-state="idle">
+      <span class="dot" aria-hidden="true"></span>
+      <span id="connText" role="status">讀取中…</span>
+      <button class="btn sm" id="saveRetry" type="button" hidden>重試</button>
+      <button class="btn sm" id="saveDiscard" type="button" hidden>捨棄未儲存的變更</button>
+      <button class="linkbtn" id="connToggle" type="button" aria-expanded="false" aria-controls="tokenForm">GitHub 連線設定</button>
+    </div>
+    <p class="hint" id="runInfo"></p>
+    <div class="banner" id="wfBanner" hidden>
+      <span><b>監控排程目前是關閉的</b>：GitHub Actions 的 workflow 被停用，不會自動檢查。</span>
+      <button class="btn sm edit-only" id="wfEnable" type="button">啟用</button>
+    </div>
+    <form class="connect" id="tokenForm" hidden>
+      <label for="tokenInput">GitHub token（只存在這台裝置的瀏覽器）</label>
+      <div class="row">
+        <input id="tokenInput" type="password" autocomplete="off" spellcheck="false" placeholder="github_pat_…">
+        <button class="btn primary" type="submit">連線</button>
+        <button class="btn" id="tokenClear" type="button">清除</button>
+      </div>
+      <ol class="howto">
+        <li>到 <a href="https://github.com/settings/personal-access-tokens/new" target="_blank" rel="noopener">GitHub → Fine-grained personal access tokens</a> 建立新 token</li>
+        <li>Repository access 選 <b>Only select repositories</b> → <b>parking-agent</b></li>
+        <li>Repository permissions：<b>Contents</b>、<b>Actions</b>、<b>Secrets</b> 都設為 <b>Read and write</b></li>
+        <li>產生後貼到上面。token 只會送給 GitHub API，不會寫進頁面或 repo</li>
+      </ol>
+    </form>
+  </div>
+</header>
+
+<section class="panel" aria-labelledby="formTitle">
+  <div class="wrap">
+    <h2 id="formTitle">新增預約</h2>
+    <form class="edit-only" id="bookingForm" autocomplete="off" novalidate style="display: grid; gap: 12px">
+      <div class="form-grid">
+        <label class="field"><span>停車場</span><select id="fSite"></select></label>
+        <label class="field"><span>進場日（起日）</span><input id="fDate" type="date" required></label>
+        <label class="field"><span>停放天數（3–60）</span><input id="fDays" type="number" min="3" max="60" step="1" inputmode="numeric" required></label>
+        <label class="field"><span>姓名</span><input id="fName" maxlength="20" spellcheck="false" autocomplete="off"></label>
+        <label class="field"><span>車牌號碼（例：AA-1234）</span><input id="fPlate" maxlength="10" spellcheck="false" autocomplete="off" autocapitalize="characters"></label>
+        <label class="switch-field"><input type="checkbox" id="fAuto" checked><span class="switch" aria-hidden="true"></span><span class="switch-text"><b>有名額就自動送出</b><small>關閉時只通知，不會登記</small></span></label>
+      </div>
+      <div class="field"><span>通知對象</span><div class="pills" id="fTo"></div></div>
+      <p class="preview" id="fPreview"></p>
+      <div class="row">
+        <button class="btn primary" type="submit" id="fSave">加密儲存</button>
+        <button class="btn" type="button" id="fCancel" hidden>取消編輯</button>
+      </div>
+      <p class="hint" id="fHint">姓名和車牌會在這個瀏覽器加密後存成 GitHub Secret，repo 和這個頁面都看不到；這台裝置另外留一份，用來一鍵填單和複製。</p>
+    </form>
+    <p class="readonly-note" id="readonlyNote" hidden>目前是唯讀模式。點上面的「GitHub 連線設定」貼上 token 後，就能新增和修改預約。</p>
+  </div>
+</section>
+
+<main class="wrap board">
+  <section class="zone bookings" aria-labelledby="listTitle">
+    <div class="zone-head">
+      <span class="ring">P</span>
+      <div><h2 id="listTitle">預約清單</h2><p class="sub">成功後自動停止監看。收到通知後手動預約成功，下一次檢查也會自動結案。</p></div>
+    </div>
+    <ul class="cards" id="bookingList"><li class="empty">讀取中…</li></ul>
+  </section>
+  <aside class="rcpts" aria-label="收件人">
+    <section class="zone" style="--c: var(--r2)">
+      <div class="zone-head"><span class="ring">R</span><div><h2>收件人</h2><p class="sub">信箱、LINE 都可以，每筆預約可以選不同的人</p></div></div>
+      <div id="rcptList"></div>
+    </section>
+    <form class="rcpt-form edit-only" id="rcptForm" autocomplete="off" novalidate hidden>
+      <b id="rcptTitle"></b>
+      <label class="field"><span>Email</span><input id="rEmail" type="email" spellcheck="false" autocomplete="off" placeholder="name@example.com"></label>
+      <label class="field"><span>LINE User ID（U 開頭 33 碼，選填）</span><input id="rLine" spellcheck="false" autocomplete="off" placeholder="U0123…"></label>
+      <div class="row"><button class="btn primary" type="submit" id="rSave">加密儲存</button><button class="btn" type="button" id="rCancel">取消</button></div>
+      <p class="hint">會在這個瀏覽器加密後存成 Secret，存好之後誰都讀不回來（包括這個頁面）。要改就重新輸入。LINE 要先加官方帳號好友才收得到。</p>
+    </form>
+    <button class="add-rcpt edit-only" id="addRcpt" type="button">＋ 新增收件人</button>
+    <p class="map-note warn edit-only" id="secretsWarn" hidden>目前的 token 沒有 Secrets 權限，無法儲存姓名、車牌和收件人。到 GitHub 編輯 token，把 <b>Secrets</b> 設為 Read and write。</p>
+  </aside>
+</main>
+
+<section class="panel" aria-labelledby="setTitle" style="border-top: 1px solid var(--rule)">
+  <div class="wrap">
+    <h2 id="setTitle">監控設定</h2>
+    <form class="form-grid" id="settingsForm" autocomplete="off">
+      <label class="switch-field"><input type="checkbox" id="setEnabled"><span class="switch" aria-hidden="true"></span><span class="switch-text"><b>監控開關</b><small>關閉後排程照跑但不檢查</small></span></label>
+      <label class="field"><span>每次監看分鐘數（1–12）</span><input type="number" id="setRun" min="1" max="12" step="1" inputmode="numeric"></label>
+      <div class="field"><span>每輪間隔秒數（隨機，5–120）</span>
+        <div class="range"><input type="number" id="setIntMin" min="5" max="120" step="1" inputmode="numeric" aria-label="最短間隔秒數">–<input type="number" id="setIntMax" min="5" max="120" step="1" inputmode="numeric" aria-label="最長間隔秒數"></div>
+      </div>
+      <label class="field"><span>失敗後重試間隔（分鐘）</span><input type="number" id="setRetry" min="1" max="60" step="1" inputmode="numeric"></label>
+      <label class="field"><span>仍有名額提醒間隔（分鐘）</span><input type="number" id="setRemind" min="5" max="1440" step="5" inputmode="numeric"></label>
+    </form>
+    <div class="row edit-only">
+      <button class="btn sm" type="button" id="runNow">立即檢查</button>
+      <button class="btn sm" type="button" id="runDry">測試填單（不送出）</button>
+      <button class="btn sm" type="button" id="runNotify">寄測試通知</button>
+    </div>
+    <p class="hint" id="testInfo"></p>
+  </div>
+</section>
+
+<footer class="wrap foot">
+  <h2>運作方式</h2>
+  <ul>
+    <li><b>檢查：</b>GitHub Actions 每次跑約 5 分鐘，每 15～25 秒查一次名額。排程要靠 cron-job.org 每 5 分鐘觸發才準時（設定方式見 README）。</li>
+    <li><b>午夜開放：</b>網站每天 00:00 開放「20 天後」的日期。目標日期當晚開放時，監控會撐過午夜並改成每 3 秒查一次。</li>
+    <li><b>自動預約：</b>有名額就同時通知並送出，再用查詢記錄確認。網站若要求 reCAPTCHA 人工驗證，程式會停下來通知你手動完成，不會去破解驗證。</li>
+    <li><b>同一台車：</b>網站規定重新申請前要先取消舊登記。程式不會幫你取消，遇到時會在通知附上取消連結。</li>
+    <li><b>公開與隱私：</b>這個頁面和 repo 都是公開的，任何人都看得到<b>進場日、天數</b>和代稱（Booking_N、Recipient_N），但看不到姓名、車牌和收件資料。沒有 token 只能看、不能改。</li>
+    <li><b>裝置副本：</b>姓名和車牌會留一份在這台裝置的瀏覽器，「一鍵填單」書籤也含這些資料。別在共用電腦上使用。</li>
+  </ul>
+</footer>
+
+<div class="toast" id="toast" role="status" aria-live="polite" hidden></div>
+
+<script src="vendor/nacl-fast.min.js"></script>
+<script>
+"use strict";
+
+const OWNER = "k0341055", REPO = "parking-agent", BRANCH = "main";
+const CONFIG_PATH = "watch_config.json", STATUS_PATH = "status.json", WORKFLOW = "parking.yml";
+const SITE_HOST = "pcc.youparking.com.tw", SITE_BASE = `https://${SITE_HOST}/parkingreserve/#`;
+// Commits made from this page use the GitHub noreply address, so no personal email lands in the public history.
+const COMMITTER = { name: "k0341055", email: "17486625+k0341055@users.noreply.github.com" };
+const TOKEN_KEY = "pka-github-token", PROFILE_KEY = "pka-profiles";
+const BOOKING_RE = /^Booking_([1-9]\d*)$/, RECIPIENT_RE = /^Recipient_([1-9]\d*)$/;
+const LINE_ID_RE = /^U[0-9a-f]{32}$/, EMAIL_RE = /^[^\s@,;]+@[^\s@,;]+\.[^\s@,;]+$/;
+const PLATE_RE = /^((軍[A-Z]-[0-9]{5})|([A-Z0-9]{1,4}-[A-Z0-9]{1,4}))$/;  // same rule as the booking site's form
+// Mirrors SITES / EARLIEST_DAYS / LATEST_DAYS / MIN_DAYS / MAX_DAYS / DEFAULT_SETTINGS / _SETTING_RANGES in parking_agent_v2.py
+const SITES = {
+  p4: { name: "P4 停車場（第二航廈）", link: 1, space: 1 },
+  riyueting: { name: "日月亭平安（機場外圍）", link: 4, space: 9 },
+};
+const EARLIEST_DAYS = 2, LATEST_DAYS = 20, MIN_DAYS = 3, MAX_DAYS = 60;
+const DEFAULT_SETTINGS = { enabled: true, run_minutes: 5, interval_min: 15, interval_max: 25, retry_minutes: 5, reminder_minutes: 60 };
+const RANGES = { run_minutes: [1, 12], interval_min: [5, 120], interval_max: [5, 120], retry_minutes: [1, 60], reminder_minutes: [5, 1440] };
+const MAX_ALIASES = 10;  // parking.yml passes secrets BOOKING_1..10 and RECIPIENT_1..10 one by one
+const COLORS = ["var(--r1)", "var(--r2)", "var(--r3)", "var(--r4)", "var(--r5)", "var(--r6)"];
+const WEEK = "日一二三四五六";
+const STATE_LABEL = {
+  new: ["等待下次檢查", ""], waiting: ["尚未開放", ""], full: ["已滿，監看中", ""], available: ["有名額，處理中", "warn"],
+  needs_manual: ["請人工預約", "warn"], booked: ["已預約", "ok"], expired: ["已過期", "out"], paused: ["已暫停", ""],
+};
+const ICON = {
+  edit: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 20h4L19 9l-4-4L4 16v4zM13.5 6.5l4 4"/></svg>',
+  trash: '<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M9 7V4h6v3M6 7l1 13h10l1-13M10 11v6M14 11v6"/></svg>',
+};
+
+const store = {
+  get(k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+  set(k, v) { try { if (v == null) localStorage.removeItem(k); else localStorage.setItem(k, v); } catch (e) {} },
+};
+
+let token = store.get(TOKEN_KEY) || "";
+let tokenInvalid = false;
+let remote = null;       // { config, sha }: the version last read from or written to GitHub
+let status = { bookings: {} };
+let pending = [];        // edits not yet saved; the page always shows remote + pending
+let saving = false, saveTimer = 0, saveError = null, loadError = null, loadedAt = null;
+let secretNames = null;  // names of the repo's Actions secrets (values can never be read back)
+let workflow = null, lastRun = null;
+let editingId = null, formTo = new Set(), formTouched = false;
+let toastTimer = 0, pollTimer = 0, quickHandled = false;
+const openQuick = new Set();
+let profiles;
+try { profiles = JSON.parse(store.get(PROFILE_KEY) || "{}"); } catch (e) { profiles = {}; }
+
+const $ = id => document.getElementById(id);
+const esc = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const aliasNum = a => Number((BOOKING_RE.exec(a) || RECIPIENT_RE.exec(a) || [])[1] || 0);
+const short = a => "R" + aliasNum(a);
+const colorOf = a => COLORS[(aliasNum(a) - 1) % COLORS.length];
+const canEdit = () => !!token && !tokenInvalid && !!remote;
+const pad = n => String(n).padStart(2, "0");
+const fmtTime = iso => { const d = new Date(iso); return isNaN(d) ? "" : `${d.getMonth() + 1}/${d.getDate()} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+
+/* ---------- dates: plain calendar days in Taiwan time ---------- */
+
+const todayTW = () => new Intl.DateTimeFormat("en-CA", { timeZone: "Asia/Taipei" }).format(new Date());
+const dayNum = iso => { const [y, m, d] = iso.split("-").map(Number); return Date.UTC(y, m - 1, d) / 86400000; };
+const dayIso = n => new Date(n * 86400000).toISOString().slice(0, 10);
+const addDays = (iso, n) => dayIso(dayNum(iso) + n);
+const fmtDay = iso => { const d = new Date(dayNum(iso) * 86400000); return `${d.getUTCMonth() + 1}/${d.getUTCDate()}（${WEEK[d.getUTCDay()]}）`; };
+const endOf = b => addDays(b.date, b.days - 1);
+const openOf = date => addDays(date, -LATEST_DAYS);
+
+/* ---------- config model ---------- */
+
+function normalize(cfg) {
+  cfg = cfg && typeof cfg === "object" ? cfg : {};
+  if (cfg.settings != null && typeof cfg.settings !== "object") delete cfg.settings;
+  const rec = cfg.recipients && typeof cfg.recipients === "object" && !Array.isArray(cfg.recipients) ? cfg.recipients : {};
+  cfg.recipients = {};
+  for (const a of Object.keys(rec).filter(x => RECIPIENT_RE.test(x)).sort((x, y) => aliasNum(x) - aliasNum(y))) cfg.recipients[a] = rec[a] && typeof rec[a] === "object" ? rec[a] : {};
+  cfg.bookings = Array.isArray(cfg.bookings) ? cfg.bookings.filter(b => b && BOOKING_RE.test(b.id)) : [];
+  return cfg;
+}
+
+// Edits are replayed onto the newest file from GitHub before every save, so they must only refer to ids.
+function applyOp(cfg, op) {
+  const find = id => cfg.bookings.find(b => b.id === id);
+  switch (op.t) {
+    case "addBooking": if (!find(op.booking.id)) cfg.bookings.push(op.booking); break;
+    case "editBooking": { const b = find(op.id); if (b) { Object.assign(b, op.fields); b.rev = (b.rev || 0) + 1; } break; }
+    case "patchBooking": { const b = find(op.id); if (b) Object.assign(b, op.fields); break; }
+    case "rewatch": { const b = find(op.id); if (b) b.rev = (b.rev || 0) + 1; break; }
+    case "deleteBooking": cfg.bookings = cfg.bookings.filter(b => b.id !== op.id); break;
+    case "toggleTo": {
+      const b = find(op.id);
+      if (b) { const list = b.recipients || (b.recipients = []); b.recipients = list.includes(op.to) ? list.filter(a => a !== op.to) : [...list, op.to]; }
+      break;
+    }
+    case "setRcpt": cfg.recipients[op.alias] = op.channels; break;
+    case "removeRcpt":
+      delete cfg.recipients[op.alias];
+      for (const b of cfg.bookings) b.recipients = (b.recipients || []).filter(a => a !== op.alias);
+      break;
+    case "settings": cfg.settings = Object.assign(cfg.settings || {}, op.values); break;
+  }
+  return normalize(cfg);
+}
+
+const view = () => pending.reduce(applyOp, normalize(structuredClone(remote.config)));
+const serialize = cfg => JSON.stringify(normalize(structuredClone(cfg)), null, 2) + "\n";
+
+function commitMessage(ops) {
+  const d = ops.map(op => op.desc);
+  return "config: " + d.slice(0, 3).join("、") + (d.length > 3 ? ` 等 ${d.length} 項` : "");
+}
+
+/* ---------- GitHub API ---------- */
+
+function bytesToB64(bytes) {
+  let bin = "";
+  for (let i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+  return btoa(bin);
+}
+const b64ToBytes = s => Uint8Array.from(atob(s.replace(/\s/g, "")), c => c.charCodeAt(0));
+const b64encode = str => bytesToB64(new TextEncoder().encode(str));
+const b64decode = s => new TextDecoder().decode(b64ToBytes(s));
+
+async function gh(path, { method = "GET", body, auth = true } = {}) {
+  const headers = { Accept: "application/vnd.github+json" };
+  if (auth && token && !tokenInvalid) headers.Authorization = `Bearer ${token}`;
+  if (body) headers["Content-Type"] = "application/json";
+  let res;
+  try {
+    res = await fetch(`https://api.github.com${path}`, { method, headers, body: body && JSON.stringify(body), cache: "no-store" });
+  } catch (e) {
+    throw Object.assign(new Error("連不上 GitHub，請檢查網路"), { status: 0 });
+  }
+  if (res.status === 204) return null;
+  const data = await res.json().catch(() => ({}));
+  if (!res.ok) throw Object.assign(new Error(data.message || `HTTP ${res.status}`), { status: res.status });
+  return data;
+}
+
+async function getConfig() {
+  const path = `/repos/${OWNER}/${REPO}/contents/${CONFIG_PATH}?ref=${BRANCH}`;
+  let data;
+  try {
+    data = await gh(path);
+  } catch (e) {
+    if (e.status !== 401 || !token || tokenInvalid) throw e;
+    tokenInvalid = true;  // fall back to a read-only view
+    data = await gh(path, { auth: false });
+  }
+  return { config: normalize(JSON.parse(b64decode(data.content))), sha: data.sha };
+}
+
+async function getStatus() {
+  try {
+    const data = await gh(`/repos/${OWNER}/${REPO}/contents/${STATUS_PATH}?ref=${BRANCH}`);
+    const parsed = JSON.parse(b64decode(data.content));
+    if (!parsed.bookings || typeof parsed.bookings !== "object") parsed.bookings = {};
+    return parsed;
+  } catch (e) {
+    if (e.status === 404) return { bookings: {} };  // the agent hasn't written anything yet
+    throw e;
+  }
+}
+
+async function putConfig(config, sha, message) {
+  const data = await gh(`/repos/${OWNER}/${REPO}/contents/${CONFIG_PATH}`, {
+    method: "PUT",
+    body: { message, content: b64encode(serialize(config)), sha, branch: BRANCH, committer: COMMITTER, author: COMMITTER },
+  });
+  return data.content.sha;
+}
+
+async function loadWorkflow() {
+  try {
+    workflow = await gh(`/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}`);
+    const runs = await gh(`/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/runs?per_page=1`);
+    lastRun = runs.workflow_runs && runs.workflow_runs[0] || null;
+  } catch (e) { /* only affects the info line */ }
+}
+
+async function loadSecretNames() {
+  try {
+    const data = await gh(`/repos/${OWNER}/${REPO}/actions/secrets?per_page=100`);
+    secretNames = new Set(data.secrets.map(x => x.name));
+  } catch (e) {
+    secretNames = null;
+  }
+}
+
+function errText(e, what) {
+  if (!e) return "";
+  if (e.status === 0) return e.message;
+  if (e.status === 401) return "token 無效或已過期，請重新設定";
+  if (e.status === 403 && /rate limit/i.test(e.message)) return "GitHub API 次數暫時用完，請稍後再試";
+  if (what === "read" && e.status === 404) return "repo 裡找不到 watch_config.json";
+  if (what === "secret" && (e.status === 403 || e.status === 404)) return "token 沒有 Secrets 的 Read and write 權限";
+  if (what === "dispatch" && (e.status === 403 || e.status === 404)) return "token 沒有 Actions 的 Read and write 權限";
+  if (e.status === 403 || e.status === 404) return "token 沒有這個 repo 的 Contents 寫入權限";
+  if (e.status === 409) return "設定檔一直被其他地方修改，請再試一次";
+  return e.message;
+}
+
+/* ---------- secrets ---------- */
+
+// Secrets must be sealed with the repo's public key before upload (libsodium sealed box):
+// ephemeral X25519 key pair, nonce = BLAKE2b-192(ephemeral pk ‖ repo pk), XSalsa20-Poly1305 box via tweetnacl.
+// BLAKE2b (RFC 7693) is written out here because tweetnacl lacks it; it only hashes 64 bytes, so BigInt is fine.
+function blake2b(input, outlen) {
+  const M = (1n << 64n) - 1n;
+  const IV = [0x6a09e667f3bcc908n, 0xbb67ae8584caa73bn, 0x3c6ef372fe94f82bn, 0xa54ff53a5f1d36f1n,
+              0x510e527fade682d1n, 0x9b05688c2b3e6c1fn, 0x1f83d9abfb41bd6bn, 0x5be0cd19137e2179n];
+  const SIGMA = [
+    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15], [14, 10, 4, 8, 9, 15, 13, 6, 1, 12, 0, 2, 11, 7, 5, 3],
+    [11, 8, 12, 0, 5, 2, 15, 13, 10, 14, 3, 6, 7, 1, 9, 4], [7, 9, 3, 1, 13, 12, 11, 14, 2, 6, 5, 10, 4, 0, 15, 8],
+    [9, 0, 5, 7, 2, 4, 10, 15, 14, 1, 11, 12, 6, 8, 3, 13], [2, 12, 6, 10, 0, 11, 8, 3, 4, 13, 7, 5, 15, 14, 1, 9],
+    [12, 5, 1, 15, 14, 13, 4, 10, 0, 7, 6, 3, 9, 2, 8, 11], [13, 11, 7, 14, 12, 1, 3, 9, 5, 0, 15, 4, 8, 6, 2, 10],
+    [6, 15, 14, 9, 11, 3, 0, 8, 12, 2, 13, 7, 1, 4, 10, 5], [10, 2, 8, 4, 7, 6, 1, 5, 15, 11, 9, 14, 3, 12, 13, 0],
+  ];
+  const rotr = (x, n) => ((x >> BigInt(n)) | (x << BigInt(64 - n))) & M;
+  const h = IV.slice();
+  h[0] ^= 0x01010000n ^ BigInt(outlen);
+  const blocks = Math.max(1, Math.ceil(input.length / 128));
+  for (let b = 0; b < blocks; b++) {
+    const block = new Uint8Array(128);
+    block.set(input.subarray(b * 128, b * 128 + 128));
+    const m = [];
+    for (let i = 0; i < 16; i++) {
+      let w = 0n;
+      for (let j = 7; j >= 0; j--) w = (w << 8n) | BigInt(block[i * 8 + j]);
+      m.push(w);
+    }
+    const last = b === blocks - 1;
+    const v = [...h, ...IV];
+    v[12] ^= BigInt(last ? input.length : (b + 1) * 128);
+    if (last) v[14] ^= M;
+    const G = (a, bb, c, d, x, y) => {
+      v[a] = (v[a] + v[bb] + x) & M; v[d] = rotr(v[d] ^ v[a], 32);
+      v[c] = (v[c] + v[d]) & M;      v[bb] = rotr(v[bb] ^ v[c], 24);
+      v[a] = (v[a] + v[bb] + y) & M; v[d] = rotr(v[d] ^ v[a], 16);
+      v[c] = (v[c] + v[d]) & M;      v[bb] = rotr(v[bb] ^ v[c], 63);
+    };
+    for (let r = 0; r < 12; r++) {
+      const s = SIGMA[r % 10];
+      G(0, 4, 8, 12, m[s[0]], m[s[1]]);   G(1, 5, 9, 13, m[s[2]], m[s[3]]);
+      G(2, 6, 10, 14, m[s[4]], m[s[5]]);  G(3, 7, 11, 15, m[s[6]], m[s[7]]);
+      G(0, 5, 10, 15, m[s[8]], m[s[9]]);  G(1, 6, 11, 12, m[s[10]], m[s[11]]);
+      G(2, 7, 8, 13, m[s[12]], m[s[13]]); G(3, 4, 9, 14, m[s[14]], m[s[15]]);
+    }
+    for (let i = 0; i < 8; i++) h[i] ^= v[i] ^ v[i + 8];
+  }
+  const out = new Uint8Array(outlen);
+  for (let i = 0; i < outlen; i++) out[i] = Number((h[i >> 3] >> BigInt(8 * (i & 7))) & 0xffn);
+  return out;
+}
+
+function sealedBox(message, publicKey) {
+  const eph = nacl.box.keyPair();
+  const both = new Uint8Array(64);
+  both.set(eph.publicKey);
+  both.set(publicKey, 32);
+  const boxed = nacl.box(message, blake2b(both, 24), publicKey, eph.secretKey);
+  const out = new Uint8Array(32 + boxed.length);
+  out.set(eph.publicKey);
+  out.set(boxed, 32);
+  return out;
+}
+
+async function putSecret(name, value) {
+  const { key_id, key } = await gh(`/repos/${OWNER}/${REPO}/actions/secrets/public-key`);
+  const sealed = sealedBox(new TextEncoder().encode(value), b64ToBytes(key));
+  await gh(`/repos/${OWNER}/${REPO}/actions/secrets/${name}`, { method: "PUT", body: { encrypted_value: bytesToB64(sealed), key_id } });
+  if (secretNames) secretNames.add(name);
+}
+
+async function deleteSecret(name) {
+  try {
+    await gh(`/repos/${OWNER}/${REPO}/actions/secrets/${name}`, { method: "DELETE" });
+  } catch (e) {
+    if (e.status !== 404) throw e;
+  }
+  if (secretNames) secretNames.delete(name);
+}
+
+function saveProfile(alias, profile) {
+  if (profile) profiles[alias] = profile; else delete profiles[alias];
+  store.set(PROFILE_KEY, JSON.stringify(profiles));
+}
+
+/* ---------- loading, saving ---------- */
+
+async function load() {
+  try {
+    remote = await getConfig();
+    loadError = null;
+    loadedAt = new Date();
+    status = await getStatus();
+    await loadWorkflow();
+    if (token && !tokenInvalid) await loadSecretNames();
+  } catch (e) {
+    loadError = e;
+  }
+  render();
+  handleQuickHash();
+}
+
+// Without a token GitHub allows 60 requests an hour, so only signed-in pages refresh on a timer.
+function schedulePoll() {
+  clearInterval(pollTimer);
+  if (token && !tokenInvalid) pollTimer = setInterval(() => { if (!document.hidden && !saving && !pending.length) load(); }, 60_000);
+}
+
+function queueOp(...ops) {
+  pending.push(...ops);
+  saveError = null;
+  render();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flush, 500);
+}
+
+async function flush() {
+  clearTimeout(saveTimer);
+  if (saving || !pending.length || !canEdit()) return;
+  saving = true;
+  saveError = null;
+  renderStatus();
+  const batch = pending.slice();
+  try {
+    let saved = null;
+    for (let attempt = 1; !saved; attempt++) {
+      const latest = await getConfig();
+      if (tokenInvalid) throw Object.assign(new Error("token 無效"), { status: 401 });
+      const next = batch.reduce(applyOp, structuredClone(latest.config));
+      try {
+        saved = { config: next, sha: await putConfig(next, latest.sha, commitMessage(batch)) };
+      } catch (e) {
+        const conflict = e.status === 409 || (e.status === 422 && /sha/i.test(e.message));
+        if (!conflict || attempt >= 4) throw e;
+      }
+    }
+    remote = saved;
+    loadedAt = new Date();
+    pending = pending.slice(batch.length);
+  } catch (e) {
+    saveError = e;
+  } finally {
+    saving = false;
+    render();
+    if (pending.length && !saveError) { clearTimeout(saveTimer); saveTimer = setTimeout(flush, 300); }
+  }
+}
+
+async function dispatch(inputs, label) {
+  if (!canEdit()) return;
+  try {
+    await gh(`/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/dispatches`, { method: "POST", body: { ref: BRANCH, inputs } });
+    toast(`${label}已送出，通常 1～3 分鐘內完成`);
+  } catch (e) {
+    toast(errText(e, "dispatch"));
+  }
+}
+
+/* ---------- rendering ---------- */
+
+function bookingState(b) {
+  if (b.enabled === false) return "paused";
+  const entry = status.bookings[b.id];
+  const key = `${b.site}|${b.date}|${b.days}|${b.rev || 0}`;
+  return entry && entry.key === key && STATE_LABEL[entry.state] ? entry.state : "new";
+}
+
+function renderStatus() {
+  const conn = $("conn"), text = $("connText");
+  let state = "idle", msg = "";
+  if (loadError && !remote) { state = "err"; msg = `讀取失敗：${errText(loadError, "read")}`; }
+  else if (saveError) { state = "err"; msg = `沒有存到：${errText(saveError)}`; }
+  else if (saving || pending.length) { state = "busy"; msg = "儲存中…"; }
+  else if (tokenInvalid) { state = "err"; msg = "token 無效或已過期，目前是唯讀模式"; }
+  else if (token) { state = "ok"; msg = loadedAt ? `已連線 GitHub・${pad(loadedAt.getHours())}:${pad(loadedAt.getMinutes())} 讀取` : "已連線 GitHub"; }
+  else { msg = "唯讀模式"; }
+  conn.dataset.state = state;
+  text.textContent = msg;
+  $("saveRetry").hidden = !saveError;
+  $("saveDiscard").hidden = !saveError;
+}
+
+function profileLine(b) {
+  const local = profiles[b.id];
+  if (local) return `<div class="sub-line">車牌 <b>${esc(local.plate)}</b>・姓名 <b>${esc(local.name)}</b></div>`;
+  if (secretNames && !secretNames.has(`BOOKING_${aliasNum(b.id)}`))
+    return `<div class="sub-line warn">還沒填姓名和車牌，有名額時只會通知，不會自動送出。按「編輯」補上。</div>`;
+  if (secretNames) return `<div class="sub-line">姓名和車牌已加密存在 GitHub（這台裝置沒有副本）</div>`;
+  return "";
+}
+
+function quickPanel(b) {
+  const site = SITES[b.site], local = profiles[b.id];
+  const copy = (label, value) => `<button class="copy" type="button" data-copy="${esc(value)}"><small>${esc(label)}</small><b>${esc(value)}</b></button>`;
+  const fields = [copy("進場日", b.date), copy("天數", String(b.days))];
+  if (local) fields.unshift(copy("車牌", local.plate), copy("姓名", local.name));
+  return `<div class="quick">
+    <div class="copies">${fields.join("")}</div>
+    <div class="row">
+      <a class="btn sm primary" href="${esc(`${SITE_BASE}/reservedindex/${site.link}`)}" target="_blank" rel="noopener">開啟預約頁</a>
+      ${local ? `<a class="btn sm bm-link" data-bm="${esc(b.id)}" href="#">一鍵填單</a><button class="btn sm" type="button" data-bm-copy="${esc(b.id)}">複製書籤程式碼</button>` : ""}
+    </div>
+    ${local
+      ? `<p class="hint">把「一鍵填單」拖到書籤列，在預約網站點一下就會勾好須知、開到這天的表單並填好資料，最後由你按送出。手機沒有書籤列：複製程式碼，隨便加一個書籤，再把書籤網址改成貼上的內容。</p>`
+      : `<p class="hint">這台裝置沒有姓名和車牌的副本，所以沒有一鍵填單。通知訊息裡有完整資料，或按「編輯」重新輸入一次就會留在這台裝置。</p>`}
+  </div>`;
+}
+
+function bookingCard(b, cfg, edit) {
+  const state = bookingState(b), [label, cls] = STATE_LABEL[state];
+  const entry = status.bookings[b.id];
+  const detail = entry && state !== "new" && state !== "paused" ? entry.detail : "";
+  const since = entry && entry.since && state !== "new" ? fmtTime(entry.since) : "";
+  const pills = Object.keys(cfg.recipients).map(a => {
+    const on = (b.recipients || []).includes(a);
+    return `<button class="pill" type="button" style="--c:${colorOf(a)}" aria-pressed="${on}" data-toggle="${esc(a)}" ${edit ? "" : "disabled"}>${esc(short(a))}</button>`;
+  }).join("");
+  const site = SITES[b.site] || { name: b.site };
+  const lines = [`${esc(site.name)}・${b.days} 天`];
+  if (state === "new" || state === "waiting") lines.push(`${esc(fmtDay(openOf(b.date)))} 00:00 開放登記`);
+  if (b.auto_submit === false) lines.push("只通知，不自動送出");
+  const canQuick = state !== "booked" && state !== "expired";
+  const isOpen = openQuick.has(b.id);
+  return `<li class="card" id="card-${esc(b.id)}" data-id="${esc(b.id)}">
+    <span class="ring" style="--c: var(--line)">${aliasNum(b.id)}</span>
+    <div class="body">
+      <div class="title-row"><span class="period">${esc(fmtDay(b.date))} → ${esc(fmtDay(endOf(b)))}</span><span class="tag ${cls}">${esc(label)}</span></div>
+      <div class="sub-line">${lines.join("・")}</div>
+      ${detail ? `<div class="sub-line ${state === "needs_manual" ? "warn" : ""}">${esc(detail)}${since ? `（${esc(since)}）` : ""}</div>` : (since ? `<div class="sub-line">更新於 ${esc(since)}</div>` : "")}
+      ${profileLine(b)}
+      <div class="assign"><span class="assign-k">通知</span>${pills || '<span class="assign-k">還沒有收件人</span>'}</div>
+      <div class="actions">
+        ${canQuick ? `<button class="btn sm ${state === "needs_manual" ? "primary" : ""}" type="button" data-act="quick" aria-expanded="${isOpen}">快速預約</button>` : ""}
+        <button class="btn sm edit-only" type="button" data-act="edit">編輯</button>
+        <button class="btn sm edit-only" type="button" data-act="pause">${b.enabled === false ? "恢復監看" : "暫停"}</button>
+        ${state === "booked" || state === "expired" ? `<button class="btn sm edit-only" type="button" data-act="rewatch">重新監看</button>` : ""}
+        <button class="btn sm edit-only" type="button" data-act="delete">刪除</button>
+      </div>
+      ${isOpen && canQuick ? quickPanel(b) : ""}
+    </div>
+  </li>`;
+}
+
+function rcptRow(a, cfg, edit) {
+  const n = aliasNum(a), channels = cfg.recipients[a] || {};
+  let info;
+  if (secretNames && secretNames.has(`RECIPIENT_${n}`)) {
+    info = [channels.email && "Email", channels.line && "LINE"].filter(Boolean).join("、") || "已設定";
+    info = `<small>${esc(info)}</small>`;
+  } else if (secretNames) {
+    const legacy = [secretNames.has("GMAIL_RECIPIENTS") && `Email（GMAIL_RECIPIENTS 第 ${n} 個）`, n === 1 && secretNames.has("LINE_USER_ID") && "LINE（LINE_USER_ID）"].filter(Boolean);
+    info = legacy.length ? `<small>舊設定：${esc(legacy.join("、"))}</small>` : `<small class="warn">尚未設定</small>`;
+  } else {
+    info = `<small>${esc([channels.email && "Email", channels.line && "LINE"].filter(Boolean).join("、"))}</small>`;
+  }
+  const used = cfg.bookings.filter(b => (b.recipients || []).includes(a)).length;
+  return `<div class="rcpt-row" data-rcpt="${esc(a)}">
+    <span class="ring" style="--c:${colorOf(a)}">${n}</span>
+    <div><b>${esc(a)}</b>${info}<small>${used} 筆預約</small></div>
+    ${edit ? `<button class="icon edit-only" type="button" data-rcpt-act="edit" aria-label="更換 ${esc(a)} 的聯絡方式" title="更換聯絡方式">${ICON.edit}</button>
+    <button class="icon danger edit-only" type="button" data-rcpt-act="remove" aria-label="移除 ${esc(a)}" title="移除">${ICON.trash}</button>` : ""}
+  </div>`;
+}
+
+function renderFormPills(cfg) {
+  const all = Object.keys(cfg.recipients);
+  if (!formTouched && editingId === null) formTo = new Set(all);
+  $("fTo").innerHTML = all.map(a =>
+    `<button class="pill" type="button" style="--c:${colorOf(a)}" aria-pressed="${formTo.has(a)}" data-to="${esc(a)}">${esc(short(a))}</button>`
+  ).join("") || '<span class="hint">先在右邊新增收件人</span>';
+}
+
+function renderPreview() {
+  const date = $("fDate").value, days = Number($("fDays").value);
+  if (!date || !days) { $("fPreview").textContent = ""; return; }
+  const today = todayTW(), parts = [];
+  if (days >= MIN_DAYS && days <= MAX_DAYS) parts.push(`使用區間 <b>${esc(fmtDay(date))} → ${esc(fmtDay(addDays(date, days - 1)))}</b>`);
+  else parts.push(`<span class="warn">天數要在 ${MIN_DAYS}～${MAX_DAYS} 之間</span>`);
+  if (date < addDays(today, EARLIEST_DAYS)) parts.push(`<span class="warn">網站只能登記 ${EARLIEST_DAYS} 天後的日期</span>`);
+  else if (date > addDays(today, LATEST_DAYS)) parts.push(`<b>${esc(fmtDay(openOf(date)))} 00:00</b> 開放登記，到時會自動搶`);
+  else parts.push("已開放登記，有名額就會處理");
+  $("fPreview").innerHTML = parts.join("・");
+}
+
+function renderSettings(s, edit) {
+  const set = (id, v) => { const el = $(id); if (document.activeElement !== el) el.value = v; el.disabled = !edit; };
+  $("setEnabled").checked = s.enabled; $("setEnabled").disabled = !edit;
+  set("setRun", s.run_minutes); set("setIntMin", s.interval_min); set("setIntMax", s.interval_max);
+  set("setRetry", s.retry_minutes); set("setRemind", s.reminder_minutes);
+}
+
+function renderInfo() {
+  const bits = [];
+  if (lastRun) {
+    const res = lastRun.status !== "completed" ? "執行中" : lastRun.conclusion === "success" ? "成功" : lastRun.conclusion === "skipped" ? "略過" : "失敗";
+    bits.push(`最近一次檢查：${esc(fmtTime(lastRun.created_at))}（<a href="${esc(lastRun.html_url)}" target="_blank" rel="noopener">${res}</a>）`);
+  }
+  $("runInfo").innerHTML = bits.join("");
+  $("wfBanner").hidden = !workflow || workflow.state === "active";
+  const t = status.last_test;
+  $("testInfo").textContent = t ? `最近一次測試填單（${fmtTime(t.at)}）：${t.ok ? "通過" : "失敗"}。${t.detail || ""}` : "「測試填單」會實際開瀏覽器走到填好表單，不會送出；目標停車場沒名額時改用流程相同的日月亭。";
+}
+
+function render() {
+  renderStatus();
+  if (!remote) {
+    $("bookingList").innerHTML = `<li class="empty">${esc(loadError ? errText(loadError, "read") : "讀取中…")}</li>`;
+    return;
+  }
+  const cfg = view(), edit = canEdit();
+  document.body.classList.toggle("readonly", !edit);
+  $("readonlyNote").hidden = edit;
+  $("secretsWarn").hidden = !edit || !!secretNames;
+
+  const states = cfg.bookings.map(bookingState);
+  const count = (...names) => states.filter(s => names.includes(s)).length;
+  $("sumWatch").textContent = count("new", "waiting", "full", "available");
+  $("sumWatchSub").textContent = `共 ${cfg.bookings.length} 筆`;
+  $("sumManual").textContent = count("needs_manual");
+  $("sumManualBox").classList.toggle("alert", count("needs_manual") > 0);
+  $("sumBooked").textContent = count("booked");
+
+  $("bookingList").innerHTML = cfg.bookings.length
+    ? cfg.bookings.slice().sort((a, b) => a.date < b.date ? -1 : a.date > b.date ? 1 : 0).map(b => bookingCard(b, cfg, edit)).join("")
+    : `<li class="empty">還沒有預約。在上面填好資料就能開始監看。</li>`;
+  document.querySelectorAll("[data-bm]").forEach(a => { a.href = bookmarkletFor(a.dataset.bm, cfg); });
+
+  $("rcptList").innerHTML = Object.keys(cfg.recipients).map(a => rcptRow(a, cfg, edit)).join("") || '<p class="empty">還沒有收件人</p>';
+  $("addRcpt").disabled = !nextAlias(Object.keys(cfg.recipients), "Recipient");
+  renderFormPills(cfg);
+  renderPreview();
+  renderSettings(Object.assign({}, DEFAULT_SETTINGS, cfg.settings), edit);
+  renderInfo();
+}
+
+function nextAlias(used, prefix) {
+  for (let n = 1; n <= MAX_ALIASES; n++) if (!used.includes(`${prefix}_${n}`)) return `${prefix}_${n}`;
+  return null;
+}
+
+function toast(msg) {
+  const el = $("toast");
+  el.textContent = msg;
+  el.hidden = false;
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.hidden = true; }, 3500);
+}
+
+/* ---------- quick manual booking ---------- */
+
+// Runs as a bookmarklet on the booking site, in the viewer's own browser: walks to the form and fills it in.
+// It stops before 送出 so a person submits it. Must stay self-contained: the bookmark is built from this function's source.
+function fillBookmarklet(d) {
+  const sleep = ms => new Promise(r => setTimeout(r, ms));
+  const until = async (fn, ms) => {
+    const end = Date.now() + (ms || 15000);
+    for (;;) {
+      const v = fn();
+      if (v) return v;
+      if (Date.now() > end) throw new Error("等太久，頁面可能沒有載入");
+      await sleep(80);
+    }
+  };
+  const text = el => el.textContent.replace(/\s+/g, "");
+  const button = re => [...document.querySelectorAll("button")].find(b => b.offsetParent && re.test(text(b)));
+  const input = re => {
+    const box = [...document.querySelectorAll(".v-dialog--active .v-text-field")].find(x => re.test(x.textContent));
+    return box && box.querySelector("input");
+  };
+  const put = (el, v) => {
+    el.focus();
+    el.value = v;
+    el.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  if (location.hostname !== d.host) {
+    window.open(d.url, "_blank");
+    alert("已開啟預約網站，頁面載入後再點一次這個書籤");
+    return;
+  }
+  (async () => {
+    try {
+      if (!input(/停放天數/)) {
+        if (location.hash !== "#/reservedlist/" + d.space) {
+          location.hash = "#/";
+          await sleep(60);
+          location.hash = "#/reservedindex/" + d.link;
+          const go = await until(() => button(/^前往(登記|預約)/));
+          const box = document.querySelector("input[role=checkbox]");
+          if (box && box.getAttribute("aria-checked") !== "true") box.click();
+          await sleep(60);
+          go.click();
+        }
+        await until(() => document.querySelectorAll("tbody tr").length);
+        const row = [...document.querySelectorAll("tbody tr")].find(r => r.cells[0] && r.cells[0].textContent.trim().startsWith(d.date));
+        const btn = row && [...row.querySelectorAll("button")].find(b => /登記|預約/.test(text(b)));
+        if (!btn) {
+          alert(d.date + (row ? " 目前已滿" : " 還沒開放登記"));
+          return;
+        }
+        btn.click();
+      }
+      const days = await until(() => input(/停放天數/));
+      put(days, String(d.days));
+      put(input(/姓名/), d.name);
+      put(input(/車牌號碼/), d.plate);
+      const send = button(/^送出$/);
+      if (send) {
+        send.style.outline = "3px solid #e53935";
+        send.focus();
+      }
+    } catch (e) {
+      alert("一鍵填單失敗，請手動操作：" + e.message);
+    }
+  })();
+}
+
+function bookmarkletFor(id, cfg) {
+  const b = cfg.bookings.find(x => x.id === id), p = profiles[id];
+  if (!b || !p || !SITES[b.site]) return "#";
+  const data = { host: SITE_HOST, url: `${SITE_BASE}/reservedindex/${SITES[b.site].link}`, link: SITES[b.site].link, space: SITES[b.site].space, date: b.date, days: b.days, name: p.name, plate: p.plate };
+  return "javascript:" + encodeURIComponent(`(${fillBookmarklet.toString()})(${JSON.stringify(data)})`);
+}
+
+async function copyText(text, done) {
+  try {
+    await navigator.clipboard.writeText(text);
+    toast(done);
+  } catch (e) {
+    window.prompt("瀏覽器不允許自動複製，請手動複製：", text);
+  }
+}
+
+// Notifications link here with #quick=Booking_N so the panel is already open.
+function handleQuickHash() {
+  if (quickHandled || !remote) return;
+  const m = /^#quick=(Booking_[1-9]\d*)$/.exec(location.hash);
+  if (!m) return;
+  quickHandled = true;
+  openQuick.add(m[1]);
+  render();
+  const card = $(`card-${m[1]}`);
+  if (card) { card.scrollIntoView({ block: "center" }); card.classList.add("flash"); }
+}
+
+/* ---------- booking form ---------- */
+
+function fillSiteOptions() {
+  $("fSite").innerHTML = Object.entries(SITES).map(([k, s]) => `<option value="${k}">${esc(s.name)}</option>`).join("");
+}
+
+function resetForm() {
+  editingId = null;
+  formTouched = false;
+  $("formTitle").textContent = "新增預約";
+  $("fSave").textContent = "加密儲存";
+  $("fCancel").hidden = true;
+  $("fName").placeholder = "";
+  $("fPlate").placeholder = "AA-1234";
+  $("bookingForm").reset();
+  const latest = Object.values(profiles).pop();
+  $("fName").value = latest ? latest.name : "";
+  $("fPlate").value = latest ? latest.plate : "";
+  $("fDays").value = MIN_DAYS;
+  $("fDate").min = addDays(todayTW(), EARLIEST_DAYS);
+  if (remote) render();
+}
+
+function startEdit(id) {
+  const b = view().bookings.find(x => x.id === id);
+  if (!b) return;
+  editingId = id;
+  formTo = new Set(b.recipients || []);
+  $("formTitle").textContent = `編輯 ${id}`;
+  $("fSave").textContent = "加密儲存變更";
+  $("fCancel").hidden = false;
+  $("fSite").value = b.site;
+  $("fDate").value = b.date;
+  $("fDays").value = b.days;
+  $("fAuto").checked = b.auto_submit !== false;
+  const local = profiles[id];
+  $("fName").value = local ? local.name : "";
+  $("fPlate").value = local ? local.plate : "";
+  const hasSecret = secretNames && secretNames.has(`BOOKING_${aliasNum(id)}`);
+  $("fName").placeholder = hasSecret ? "留空＝沿用已儲存的資料" : "";
+  $("fPlate").placeholder = hasSecret ? "留空＝沿用已儲存的資料" : "AA-1234";
+  render();
+  $("bookingForm").scrollIntoView({ block: "center", behavior: "smooth" });
+}
+
+$("bookingForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (!canEdit() || $("fSave").disabled) return;
+  const site = $("fSite").value, date = $("fDate").value, days = Number($("fDays").value);
+  const name = $("fName").value.trim(), plate = $("fPlate").value.trim().toUpperCase(), auto = $("fAuto").checked;
+  const cfg = view();
+  const id = editingId || nextAlias(cfg.bookings.map(b => b.id), "Booking");
+  if (!id) { toast(`預約最多 ${MAX_ALIASES} 筆`); return; }
+  if (!date) { toast("請選進場日"); return; }
+  if (date < addDays(todayTW(), EARLIEST_DAYS)) { toast(`網站只能登記 ${EARLIEST_DAYS} 天後的日期`); return; }
+  if (!Number.isInteger(days) || days < MIN_DAYS || days > MAX_DAYS) { toast(`天數要在 ${MIN_DAYS}～${MAX_DAYS} 之間`); return; }
+  const keepSecret = editingId && !name && !plate && secretNames && secretNames.has(`BOOKING_${aliasNum(id)}`);
+  if (!keepSecret) {
+    if (!name) { toast("請填姓名"); return; }
+    if (!PLATE_RE.test(plate)) { toast("車牌格式不對，要像 AA-1234（英數字，中間一條橫線）"); return; }
+  }
+  const wasEdit = !!editingId;
+  $("fSave").disabled = true;
+  try {
+    if (!keepSecret) {
+      await putSecret(`BOOKING_${aliasNum(id)}`, JSON.stringify({ name, plate }));
+      saveProfile(id, { name, plate });
+    }
+    const fields = { site, date, days, recipients: [...formTo], auto_submit: auto };
+    if (wasEdit) {
+      queueOp({ t: "editBooking", id, fields, desc: `修改 ${id}` });
+    } else {
+      queueOp({ t: "addBooking", booking: Object.assign({ id, enabled: true, rev: Date.now() }, fields), desc: `新增 ${id}` });
+    }
+    resetForm();
+    toast(wasEdit ? `已更新 ${id}` : `已新增 ${id}，姓名和車牌已加密存進 GitHub Secrets`);
+  } catch (err) {
+    toast(errText(err, "secret"));
+  } finally {
+    $("fSave").disabled = false;
+  }
+});
+
+$("fCancel").addEventListener("click", resetForm);
+["fDate", "fDays"].forEach(id => $(id).addEventListener("input", renderPreview));
+$("fPlate").addEventListener("input", e => {
+  const el = e.target, at = el.selectionStart;
+  el.value = el.value.toUpperCase();
+  el.setSelectionRange(at, at);
+});
+$("fTo").addEventListener("click", e => {
+  const a = e.target.closest("[data-to]");
+  if (!a) return;
+  formTouched = true;
+  const k = a.dataset.to;
+  if (formTo.has(k)) formTo.delete(k); else formTo.add(k);
+  a.setAttribute("aria-pressed", formTo.has(k));
+});
+
+/* ---------- booking cards ---------- */
+
+$("bookingList").addEventListener("click", async e => {
+  const copy = e.target.closest("[data-copy]");
+  if (copy) { copyText(copy.dataset.copy, "已複製"); return; }
+  const bm = e.target.closest("[data-bm]");
+  if (bm) { e.preventDefault(); toast("把這個按鈕拖到書籤列，到預約網站再點"); return; }
+  const bmCopy = e.target.closest("[data-bm-copy]");
+  if (bmCopy) { copyText(bookmarkletFor(bmCopy.dataset.bmCopy, view()), "已複製書籤程式碼"); return; }
+
+  const card = e.target.closest(".card");
+  if (!card) return;
+  const id = card.dataset.id;
+  const toggle = e.target.closest("[data-toggle]");
+  if (toggle && canEdit()) {
+    queueOp({ t: "toggleTo", id, to: toggle.dataset.toggle, desc: `${id} 通知對象` });
+    return;
+  }
+  const act = e.target.closest("[data-act]");
+  if (!act) return;
+  const b = view().bookings.find(x => x.id === id);
+  switch (act.dataset.act) {
+    case "quick":
+      if (openQuick.has(id)) openQuick.delete(id); else openQuick.add(id);
+      render();
+      break;
+    case "edit": if (canEdit()) startEdit(id); break;
+    case "pause":
+      if (canEdit() && b) queueOp({ t: "patchBooking", id, fields: { enabled: b.enabled === false }, desc: `${id} ${b.enabled === false ? "恢復監看" : "暫停"}` });
+      break;
+    case "rewatch":
+      if (canEdit()) queueOp({ t: "rewatch", id, desc: `${id} 重新監看` });
+      break;
+    case "delete":
+      if (!canEdit() || !confirm(`刪除 ${id}？只會停止監看，不會取消網站上已經完成的登記。`)) break;
+      try {
+        await deleteSecret(`BOOKING_${aliasNum(id)}`);
+        saveProfile(id, null);
+        openQuick.delete(id);
+        if (editingId === id) resetForm();
+        queueOp({ t: "deleteBooking", id, desc: `刪除 ${id}` });
+      } catch (err) {
+        toast(errText(err, "secret"));
+      }
+      break;
+  }
+});
+
+/* ---------- recipients ---------- */
+
+function openRcptForm(alias, mode) {
+  const form = $("rcptForm");
+  form.dataset.alias = alias || "";
+  form.dataset.mode = mode;
+  $("rcptTitle").textContent = mode === "new" ? "新增收件人" : `更換 ${alias} 的聯絡方式`;
+  $("rEmail").value = "";
+  $("rLine").value = "";
+  form.hidden = false;
+  $("addRcpt").hidden = true;
+  $("rEmail").focus();
+}
+
+function closeRcptForm() {
+  $("rcptForm").hidden = true;
+  $("addRcpt").hidden = false;
+}
+
+$("addRcpt").addEventListener("click", () => { if (canEdit()) openRcptForm(null, "new"); });
+$("rCancel").addEventListener("click", closeRcptForm);
+$("rcptList").addEventListener("click", async e => {
+  const btn = e.target.closest("[data-rcpt-act]");
+  if (!btn || !canEdit()) return;
+  const alias = btn.closest("[data-rcpt]").dataset.rcpt;
+  if (btn.dataset.rcptAct === "edit") { openRcptForm(alias, "edit"); return; }
+  if (!confirm(`移除 ${alias}？之後不會再通知這位收件人。`)) return;
+  try {
+    await deleteSecret(`RECIPIENT_${aliasNum(alias)}`);
+    formTo.delete(alias);
+    queueOp({ t: "removeRcpt", alias, desc: `移除 ${alias}` });
+  } catch (err) {
+    toast(errText(err, "secret"));
+  }
+});
+$("rcptForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  if (!canEdit() || $("rSave").disabled) return;
+  const form = $("rcptForm");
+  const email = $("rEmail").value.trim(), line = $("rLine").value.trim();
+  if (!email && !line) { toast("Email 和 LINE User ID 至少填一個"); return; }
+  if (email && !EMAIL_RE.test(email)) { toast("Email 格式不對"); return; }
+  if (line && !LINE_ID_RE.test(line)) { toast("LINE User ID 要是 U 開頭加 32 碼（英文小寫和數字）"); return; }
+  const mode = form.dataset.mode;
+  const alias = mode === "new" ? nextAlias(Object.keys(view().recipients), "Recipient") : form.dataset.alias;
+  if (!alias) { toast(`收件人最多 ${MAX_ALIASES} 位`); return; }
+  $("rSave").disabled = true;
+  try {
+    await putSecret(`RECIPIENT_${aliasNum(alias)}`, [email, line].filter(Boolean).join(","));
+    closeRcptForm();
+    const channels = {};
+    if (email) channels.email = true;
+    if (line) channels.line = true;
+    queueOp({ t: "setRcpt", alias, channels, desc: mode === "new" ? `新增 ${alias}` : `更新 ${alias}` });
+    if (mode === "new") formTo.add(alias);
+    toast(`已儲存 ${alias}，聯絡方式已加密存進 GitHub Secrets`);
+  } catch (err) {
+    toast(errText(err, "secret"));
+  } finally {
+    $("rSave").disabled = false;
+  }
+});
+
+/* ---------- settings and actions ---------- */
+
+$("settingsForm").addEventListener("submit", e => e.preventDefault());
+$("settingsForm").addEventListener("change", () => {
+  if (!canEdit()) return;
+  const clamp = (id, key) => {
+    const [low, high] = RANGES[key];
+    const v = Math.round(Number($(id).value));
+    return Math.max(low, Math.min(high, Number.isFinite(v) ? v : DEFAULT_SETTINGS[key]));
+  };
+  const values = {
+    enabled: $("setEnabled").checked,
+    run_minutes: clamp("setRun", "run_minutes"),
+    interval_min: clamp("setIntMin", "interval_min"),
+    interval_max: clamp("setIntMax", "interval_max"),
+    retry_minutes: clamp("setRetry", "retry_minutes"),
+    reminder_minutes: clamp("setRemind", "reminder_minutes"),
+  };
+  values.interval_max = Math.max(values.interval_min, values.interval_max);
+  queueOp({ t: "settings", values, desc: "監控設定" });
+});
+$("runNow").addEventListener("click", () => dispatch({}, "立即檢查"));
+$("runDry").addEventListener("click", () => dispatch({ dry_run: "1" }, "測試填單"));
+$("runNotify").addEventListener("click", () => dispatch({ send_test: "1" }, "測試通知"));
+$("wfEnable").addEventListener("click", async () => {
+  if (!canEdit()) return;
+  try {
+    await gh(`/repos/${OWNER}/${REPO}/actions/workflows/${WORKFLOW}/enable`, { method: "PUT" });
+    await loadWorkflow();
+    render();
+    toast("已啟用監控排程");
+  } catch (e) {
+    toast(errText(e, "dispatch"));
+  }
+});
+
+/* ---------- connection ---------- */
+
+$("connToggle").addEventListener("click", () => {
+  const form = $("tokenForm");
+  form.hidden = !form.hidden;
+  $("connToggle").setAttribute("aria-expanded", String(!form.hidden));
+  if (!form.hidden) $("tokenInput").focus();
+});
+$("tokenForm").addEventListener("submit", async e => {
+  e.preventDefault();
+  const value = $("tokenInput").value.trim();
+  if (!value) return;
+  token = value;
+  tokenInvalid = false;
+  store.set(TOKEN_KEY, token);
+  $("tokenInput").value = "";
+  $("tokenForm").hidden = true;
+  await load();
+  schedulePoll();
+  toast(tokenInvalid ? "token 無效" : "已連線 GitHub");
+});
+$("tokenClear").addEventListener("click", () => {
+  token = "";
+  tokenInvalid = false;
+  secretNames = null;
+  store.set(TOKEN_KEY, null);
+  $("tokenInput").value = "";
+  schedulePoll();
+  render();
+  toast("已清除 token");
+});
+$("saveRetry").addEventListener("click", flush);
+$("saveDiscard").addEventListener("click", () => { pending = []; saveError = null; render(); });
+window.addEventListener("hashchange", () => { quickHandled = false; handleQuickHash(); });
+window.addEventListener("beforeunload", e => { if (pending.length) e.preventDefault(); });
+
+fillSiteOptions();
+resetForm();
+load();
+schedulePoll();
+</script>
+</body>
+</html>

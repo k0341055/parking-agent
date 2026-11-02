@@ -4,10 +4,27 @@ on:
   repository_dispatch:
     types: [trigger]
   schedule:
-    # GitHub Actions cron 最短間隔為 5 分鐘
-    # 解法：每次 workflow 內部執行 5 輪，每輪間隔 ~60 秒 → 實質每分鐘偵測一次
+    # GitHub Actions cron 最短間隔為 5 分鐘且常延遲，準時觸發靠 cron-job.org（見 README）
     - cron: '*/5 * * * *'
-  workflow_dispatch:   # 允許手動觸發
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: '測試填單：走完網站流程但不送出（填 1 啟用）'
+        required: false
+        default: ''
+      send_test:
+        description: '只寄測試通知給所有收件人（填 1 啟用）'
+        required: false
+        default: ''
+
+# 同一時間只跑一個 run：避免 cron-job.org 與排程重疊時同一筆預約送出兩次、通知兩次
+concurrency:
+  group: parking-agent
+  cancel-in-progress: false
+
+# contents: write 只用來寫 status.json（預約狀態，不含個資）
+permissions:
+  contents: write
 
 env:
   FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true   # 消除 Node.js 20 deprecation 警告
@@ -15,7 +32,7 @@ env:
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 12   # install ~2min + 12輪×(~12s執行 + ~22s等待) = ~8.5min，留緩衝
+    timeout-minutes: 16   # 安裝 ~2 分鐘 + 監看最多 12 分鐘（午夜開放時可能多撐幾分鐘）
 
     steps:
       - name: Checkout code
@@ -30,48 +47,71 @@ jobs:
         uses: actions/cache@v4
         with:
           path: ~/.cache/pip
-          key: pip-playwright-requests
+          key: pip-parking-${{ runner.os }}-${{ hashFiles('requirements.txt') }}
 
       - name: Install Python dependencies
-        run: pip install playwright requests
+        run: pip install -r requirements.txt
+
+      - name: Check whether any booking needs watching
+        id: precheck
+        env:
+          DRY_RUN: ${{ inputs.dry_run }}
+          SEND_TEST: ${{ inputs.send_test }}
+        run: python parking_book/parking_agent_v2.py --precheck
 
       - name: Get Playwright version
         id: pw-version
-        run: echo "version=$(python -c 'import playwright; print(playwright.__version__)')" >> $GITHUB_OUTPUT
+        if: steps.precheck.outputs.active == 'true'
+        run: echo "version=$(pip show playwright | awk '/^Version:/{print $2}')" >> $GITHUB_OUTPUT
 
       - name: Cache Playwright browsers
         uses: actions/cache@v4
         id: playwright-cache
+        if: steps.precheck.outputs.active == 'true'
         with:
           path: ~/.cache/ms-playwright
           key: playwright-chromium-${{ runner.os }}-${{ steps.pw-version.outputs.version }}
 
       - name: Install Playwright browsers
-        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        if: steps.precheck.outputs.active == 'true' && steps.playwright-cache.outputs.cache-hit != 'true'
         run: playwright install chromium --with-deps
 
       - name: Install Playwright system deps only (cache hit)
-        if: steps.playwright-cache.outputs.cache-hit == 'true'
+        if: steps.precheck.outputs.active == 'true' && steps.playwright-cache.outputs.cache-hit == 'true'
         run: playwright install-deps chromium
 
-      - name: Run parking agent (12 rounds × ~25s)
+      - name: Run parking agent
+        if: steps.precheck.outputs.active == 'true'
         env:
           LINE_CHANNEL_ACCESS_TOKEN: ${{ secrets.LINE_CHANNEL_ACCESS_TOKEN }}
-          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
           GMAIL_SENDER: ${{ secrets.GMAIL_SENDER }}
           GMAIL_PASSWORD: ${{ secrets.GMAIL_PASSWORD }}
+          GITHUB_TOKEN: ${{ github.token }}
+          DRY_RUN: ${{ inputs.dry_run }}
+          SEND_TEST: ${{ inputs.send_test }}
+          # 舊設定：沒有 RECIPIENT_N 時使用
+          LINE_USER_ID: ${{ secrets.LINE_USER_ID }}
           GMAIL_RECIPIENTS: ${{ secrets.GMAIL_RECIPIENTS }}
-          BOOKER_NAME: ${{ secrets.BOOKER_NAME }}
-          BOOKER_PLATE: ${{ secrets.BOOKER_PLATE }}
-          PARKING_DAYS: "5"
-          CHECK_ROUNDS: "12"
+          # UI 新增的資料存成 Secret（上限各 10 筆，與 UI 一致）；沒建立的 Secret 會是空字串
+          # 不要改成 toJSON(secrets) 整包傳入：GitHub 會判定為可疑 workflow，每次 run 都要手動核准
+          RECIPIENT_1: ${{ secrets.RECIPIENT_1 }}
+          RECIPIENT_2: ${{ secrets.RECIPIENT_2 }}
+          RECIPIENT_3: ${{ secrets.RECIPIENT_3 }}
+          RECIPIENT_4: ${{ secrets.RECIPIENT_4 }}
+          RECIPIENT_5: ${{ secrets.RECIPIENT_5 }}
+          RECIPIENT_6: ${{ secrets.RECIPIENT_6 }}
+          RECIPIENT_7: ${{ secrets.RECIPIENT_7 }}
+          RECIPIENT_8: ${{ secrets.RECIPIENT_8 }}
+          RECIPIENT_9: ${{ secrets.RECIPIENT_9 }}
+          RECIPIENT_10: ${{ secrets.RECIPIENT_10 }}
+          BOOKING_1: ${{ secrets.BOOKING_1 }}
+          BOOKING_2: ${{ secrets.BOOKING_2 }}
+          BOOKING_3: ${{ secrets.BOOKING_3 }}
+          BOOKING_4: ${{ secrets.BOOKING_4 }}
+          BOOKING_5: ${{ secrets.BOOKING_5 }}
+          BOOKING_6: ${{ secrets.BOOKING_6 }}
+          BOOKING_7: ${{ secrets.BOOKING_7 }}
+          BOOKING_8: ${{ secrets.BOOKING_8 }}
+          BOOKING_9: ${{ secrets.BOOKING_9 }}
+          BOOKING_10: ${{ secrets.BOOKING_10 }}
         run: python parking_book/parking_agent_v2.py
-
-      - name: Upload debug screenshots (if any)
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: debug-screenshots-${{ github.run_id }}
-          path: /tmp/parking_unknown_*.png
-          if-no-files-found: ignore
-          retention-days: 3

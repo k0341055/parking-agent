@@ -1,0 +1,27 @@
+{
+  "settings": {
+    "enabled": true,
+    "run_minutes": 5,
+    "interval_min": 15,
+    "interval_max": 25,
+    "retry_minutes": 5,
+    "reminder_minutes": 60
+  },
+  "recipients": {
+    "Recipient_1": {}
+  },
+  "bookings": [
+    {
+      "id": "Booking_1",
+      "site": "p4",
+      "date": "2026-11-21",
+      "days": 7,
+      "recipients": [
+        "Recipient_1"
+      ],
+      "auto_submit": true,
+      "enabled": true,
+      "rev": 1
+    }
+  ]
+}
