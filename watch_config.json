@@ -11,6 +11,9 @@
     "Recipient_1": {},
     "Recipient_2": {
       "email": true
+    },
+    "Recipient_3": {
+      "email": true
     }
   },
   "bookings": [
@@ -23,7 +26,8 @@
       "days": 8,
       "recipients": [
         "Recipient_1",
-        "Recipient_2"
+        "Recipient_2",
+        "Recipient_3"
       ],
       "auto_submit": true
     }
