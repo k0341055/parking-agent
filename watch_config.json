@@ -15,19 +15,6 @@
   },
   "bookings": [
     {
-      "id": "Booking_1",
-      "enabled": true,
-      "rev": 1793812507199,
-      "site": "p4",
-      "date": "2026-11-22",
-      "days": 7,
-      "recipients": [
-        "Recipient_1",
-        "Recipient_2"
-      ],
-      "auto_submit": true
-    },
-    {
       "id": "Booking_2",
       "enabled": true,
       "rev": 1793943015836,
